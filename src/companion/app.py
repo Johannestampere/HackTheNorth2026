@@ -1,6 +1,7 @@
-"""Local stage runners. These do not use an LLM or control hardware."""
+"""Stage runners; hardware output occurs only with an explicit --display-url."""
 
 import argparse
+import json
 from pathlib import Path
 
 from companion.pool.contracts import PerceptionReady, PlanningReady
@@ -12,7 +13,11 @@ from companion.pool.perception.service import PerceptionService
 from companion.pool.pipeline import validate_plan_for_state
 from companion.pool.planning.service import PooltoolPlanner
 from companion.pool.planning.service import PlannerConfig
-from companion.pool.projection.models import load_projection_target
+from companion.pool.projection.models import ProjectionTarget, load_projection_target
+from companion.pool.projection.calibration import from_corners
+from companion.pool.projection.preview import save_png
+from companion.hardware.http_projector import HttpProjector
+from companion.serialization import write_document
 from companion.pool.projection.service import ProjectionService
 from companion.sensors.models import load_capture_batch
 
@@ -37,6 +42,23 @@ def main(argv: list[str] | None = None) -> int:
     render.add_argument("--plan", type=Path, required=True)
     render.add_argument("--target", type=Path, required=True)
     render.add_argument("--output", type=Path, required=True)
+    render.add_argument('--display-url', help='Explicitly send the rendered frame to a Pi HTTP endpoint')
+    project = commands.add_parser('project', help='Plan, render, save preview and optionally send to the Pi')
+    project.add_argument('--state', type=Path, required=True)
+    project.add_argument('--game', type=Path, required=True)
+    project.add_argument('--target', type=Path, required=True)
+    project.add_argument('--output', type=Path, required=True)
+    project.add_argument('--table-length-m', type=float, default=2.0)
+    project.add_argument('--display-url')
+    calibrate = commands.add_parser('calibrate', help='Build a target from four projector-pixel corners')
+    calibrate.add_argument('--geometry', type=Path, required=True)
+    calibrate.add_argument('--corners', type=Path, required=True,
+                           help='JSON array of [x,y] pairs: table TL, TR, BR, BL in projector pixels')
+    calibrate.add_argument('--width-px', type=int, required=True)
+    calibrate.add_argument('--height-px', type=int, required=True)
+    calibrate.add_argument('--calibration-id', required=True)
+    calibrate.add_argument('--pose-id', required=True)
+    calibrate.add_argument('--output', type=Path, required=True)
     args = parser.parse_args(argv)
     try:
         if args.command == "check-fixtures":
@@ -78,16 +100,45 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             validate_plan_for_state(result.plan, state, game)
             save_shot_plan(args.output, result.plan)
-        elif args.command == "render":
-            plan = load_shot_plan(args.plan)
+        elif args.command == 'calibrate':
+            geometry = load_geometry(args.geometry)
+            corners = json.loads(args.corners.read_text())
+            target = ProjectionTarget(geometry, args.calibration_id, args.pose_id,
+                args.width_px, args.height_px, from_corners(geometry.width, corners))
+            write_document(args.output, 'projection_target', target)
+        elif args.command in ('render', 'project'):
+            if args.output.suffix.lower() not in ('.png', '.ppm'):
+                raise ValueError('Preview output must end in .png or .ppm')
+            if args.command == 'project':
+                state, game = load_table_state(args.state), load_game_context(args.game)
+                target = load_projection_target(args.target)
+                if target.geometry != state.geometry:
+                    raise ValueError('Calibration geometry does not match observed table')
+                result = PooltoolPlanner(PlannerConfig(table_length_m=args.table_length_m)).plan(state, game)
+                if not isinstance(result, PlanningReady):
+                    print(f'{type(result).__name__}: {result.reason}')
+                    return 1
+                plan = result.plan
+                validate_plan_for_state(plan, state, game)
+            else:
+                plan = load_shot_plan(args.plan)
             target = load_projection_target(args.target)
             if plan.table_id != target.table_id:
                 raise ValueError("Plan and projection target use different table frames")
-            ProjectionService().render(plan, target).save_ppm(args.output)
+            frame = ProjectionService().render(plan, target)
+            if args.output.suffix.lower() == '.png':
+                save_png(frame, args.output)
+            else:
+                frame.save_ppm(args.output)
+            print(f'Preview saved: {args.output.resolve()}')
+            if args.display_url:
+                HttpProjector(args.display_url, target.width_px, target.height_px).project(
+                    frame.rgb, frame.width_px, frame.height_px)
+                print('Frame accepted by display endpoint')
     except NotImplementedError as error:
         parser.exit(2, f"Stage not implemented: {error}\n")
     except RuntimeError as error:
-        parser.exit(2, f"Planning error: {error}\n")
+        parser.exit(2, f"Stage error: {error}\n")
     except (ValueError, TypeError, KeyError, OSError) as error:
         parser.exit(2, f"Invalid input: {error}\n")
     return 0

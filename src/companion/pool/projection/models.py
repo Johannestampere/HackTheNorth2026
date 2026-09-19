@@ -29,6 +29,17 @@ class ProjectionTarget:
     def table_id(self) -> str:
         return self.geometry.table_id
 
+    @property
+    def corners_px(self) -> tuple[tuple[float, float], ...]:
+        """Table TL, TR, BR, BL in projector pixels, derived from calibration.
+
+        Correspondence order follows the agreed table frame, not image sorting.
+        Camera pixels cannot be substituted for these projector-pixel locations.
+        """
+        from .calibration import map_point
+        return tuple(map_point(self.table_to_pixel, x, y) for x,y in
+                     ((0,0),(1,0),(1,self.geometry.width),(0,self.geometry.width)))
+
     def __post_init__(self) -> None:
         if not all((self.table_id, self.calibration_id, self.pose_id)):
             raise ValueError("Projection requires table, calibration, and pose IDs")

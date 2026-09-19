@@ -96,7 +96,7 @@ The required game file supplies `player_group`, `is_break`, and `ball_in_hand`. 
 
 ## Teammate 3: projection
 
-Entry point: `src/companion/pool/projection/service.py`, `ProjectionService.render()`.
+Entry point: `src/companion/pool/projection/service.py`, `ProjectionService.render()`. Implemented calibrated rendering and Pi transport: see [projection guide](projection.md).
 
 Input: physical shot geometry plus calibrated projector target (including table geometry). Output: an RGB frame at native projector resolution. Do not run shot planning or move hardware inside this method.
 

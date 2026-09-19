@@ -6,7 +6,7 @@ The first tool is **pool**. The robot sits beside the table, some distance away 
 
 ## Current status
 
-The **pool planner now runs Pooltool simulations** to choose direct center-ball pots, evaluate basic shot legality, rank successes using sampled execution/position errors and bounded two-shot lookahead, and output cue aim, speed, and predicted paths. A standalone 2D replay shows synthetic game runs. Perception, perspective rendering, LLM routing, and rotation control remain stubs. The merged [Raspberry Pi display](raspi/README.md) accepts RGB frames or screen-space vectors over HTTP and drives HDMI. See the [planning guide](docs/planning.md) for setup, scoring, and limitations.
+The **pool planner now runs Pooltool simulations** to choose direct center-ball pots, evaluate basic shot legality, rank successes using sampled execution/position errors and bounded two-shot lookahead, and output cue aim, speed, and predicted paths. A standalone 2D replay shows synthetic game runs. Calibrated perspective rendering, PNG previews, and an explicit Pi HTTP sender are implemented on this branch; see [projection integration](docs/projection.md). Perception, LLM routing, and rotation control remain stubs. The merged [Raspberry Pi display](raspi/README.md) accepts RGB frames or screen-space vectors over HTTP and drives HDMI. See the [planning guide](docs/planning.md) for setup, scoring, and limitations.
 
 The fixtures are synthetic examples, not camera measurements or a validated shot recommendation. No model weights, camera SDK, LLM credentials, or hardware are required to start.
 
@@ -68,7 +68,7 @@ PYTHONPATH=src python3.11 -m companion.app render \
   --output artifacts/projection.ppm
 ```
 
-The planning command works after installing `.[planning]`; perception and projection still exit with **stage not implemented**. Planning and projection use checked-in inputs, so they do not depend on an upstream implementation. Generated output belongs under ignored `artifacts/`.
+The planning command works after installing `.[planning]`; perception still exits with **stage not implemented**. Projection works with standard-library Python. Planning and projection use checked-in inputs, so they do not depend on an upstream implementation. Generated output belongs under ignored `artifacts/`.
 
 ## Visualized planner demo
 
