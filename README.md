@@ -6,7 +6,7 @@ The first tool is **pool**. The robot sits beside the table, some distance away 
 
 ## Current status
 
-This repository contains **the skeleton and contracts**, not working perception, physics, projection, LLM routing, or hardware control. The three stage services deliberately raise `NotImplementedError`. The runnable parts are contract validation, JSON adapters, local command entry points, and single-batch pipeline wiring.
+The **pool planner now runs Pooltool simulations** to choose direct center-ball pots, evaluate basic shot legality, and output cue aim, speed, and predicted paths. A standalone 2D replay shows synthetic game runs. Perception, projection, LLM routing, and hardware control remain stubs. See the [planning guide](docs/planning.md) for setup, scoring, and limitations.
 
 The fixtures are synthetic examples, not camera measurements or a validated shot recommendation. No model weights, camera SDK, LLM credentials, or hardware are required to start.
 
@@ -68,4 +68,13 @@ PYTHONPATH=src python3.11 -m companion.app render \
   --output artifacts/projection.ppm
 ```
 
-These commands currently exit with an explicit **stage not implemented** message. Each teammate implements their own `service.py` to make their command work. Planning and projection use checked-in inputs, so they do not depend on an upstream implementation. Generated output belongs under ignored `artifacts/`.
+The planning command works after installing `.[planning]`; perception and projection still exit with **stage not implemented**. Planning and projection use checked-in inputs, so they do not depend on an upstream implementation. Generated output belongs under ignored `artifacts/`.
+
+## Visualized planner demo
+
+```sh
+.venv/bin/python -m pip install -e '.[planning]'
+PYTHONPATH=src .venv/bin/python -m companion.pool.planning.demo
+```
+
+Open `artifacts/pool-game.html` to watch the generated game. It uses actual simulated trajectories, with play/pause and shot scrubbing. Unsupported direct-pot positions cause a clearly logged demo player switch; safeties and realistic execution errors are future work. See [details and short endgame command](docs/planning.md).

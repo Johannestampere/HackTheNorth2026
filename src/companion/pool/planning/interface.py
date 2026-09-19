@@ -4,6 +4,12 @@ from companion.pool.contracts import GameContext, PlanningResult, TableState
 
 
 class ShotPlanner(Protocol):
+    """Interface accepted by the pipeline; implementations provide the shot search.
+
+    PooltoolPlanner satisfies this protocol through its plan method, without
+    inheritance. Tests can provide a lightweight substitute with the same method.
+    """
+
     def plan(self, state: TableState, game: GameContext) -> PlanningResult:
         """Choose a pot attempt for eventual rack success, not just pot count.
 

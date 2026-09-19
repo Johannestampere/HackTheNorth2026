@@ -10,8 +10,14 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
 
+[project.optional-dependencies]
+planning = ["pooltool-billiards==0.6.0"]
+
 [project.scripts]
 companion = "companion.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"companion.pool.planning" = ["replay.html"]

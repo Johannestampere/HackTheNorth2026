@@ -11,7 +11,7 @@ from companion.pool.contracts.serialization import load_shot_plan, load_table_st
 from companion.pool.perception.interface import TablePerception
 from companion.pool.pipeline import PoolPipeline, PreparedProjection, validate_plan_for_state
 from companion.pool.planning.interface import ShotPlanner
-from companion.pool.planning.service import PlanningService
+from companion.pool.planning.service import PooltoolPlanner
 from companion.pool.projection.interface import ShotRenderer
 from companion.pool.projection.models import ProjectionFrame, load_projection_target
 from companion.sensors.models import load_capture_batch
@@ -119,7 +119,7 @@ class PipelineTests(unittest.TestCase):
         for game in (GameContext(None), GameContext(PlayerGroup.SOLIDS, is_break=True),
                      GameContext(PlayerGroup.SOLIDS, ball_in_hand=True)):
             with self.subTest(game=game):
-                self.assertIsInstance(PlanningService().plan(self.state, game), InsufficientInformation)
+                self.assertIsInstance(PooltoolPlanner().plan(self.state, game), InsufficientInformation)
                 with self.assertRaisesRegex(ValueError, "ordinary placed-ball"):
                     validate_plan_for_state(self.plan, self.state, game)
 

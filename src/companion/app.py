@@ -10,7 +10,8 @@ from companion.pool.contracts.serialization import (
 )
 from companion.pool.perception.service import PerceptionService
 from companion.pool.pipeline import validate_plan_for_state
-from companion.pool.planning.service import PlanningService
+from companion.pool.planning.service import PooltoolPlanner
+from companion.pool.planning.service import PlannerConfig
 from companion.pool.projection.models import load_projection_target
 from companion.pool.projection.service import ProjectionService
 from companion.sensors.models import load_capture_batch
@@ -30,6 +31,8 @@ def main(argv: list[str] | None = None) -> int:
     plan.add_argument("--game", type=Path, required=True,
                       help="Versioned game_context JSON for the current shooter")
     plan.add_argument("--output", type=Path, required=True)
+    plan.add_argument("--table-length-m", type=float, default=2.0,
+                      help="Measured physical long side; default is an explicit 2 m assumption")
     render = commands.add_parser("render", help="Run teammate 3's implementation")
     render.add_argument("--plan", type=Path, required=True)
     render.add_argument("--target", type=Path, required=True)
@@ -69,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "plan":
             game = load_game_context(args.game)
             state = load_table_state(args.state)
-            result = PlanningService().plan(state, game)
+            result = PooltoolPlanner(PlannerConfig(table_length_m=args.table_length_m)).plan(state, game)
             if not isinstance(result, PlanningReady):
                 print(f"{type(result).__name__}: {result.reason}")
                 return 1
@@ -83,6 +86,8 @@ def main(argv: list[str] | None = None) -> int:
             ProjectionService().render(plan, target).save_ppm(args.output)
     except NotImplementedError as error:
         parser.exit(2, f"Stage not implemented: {error}\n")
+    except RuntimeError as error:
+        parser.exit(2, f"Planning error: {error}\n")
     except (ValueError, TypeError, KeyError, OSError) as error:
         parser.exit(2, f"Invalid input: {error}\n")
     return 0

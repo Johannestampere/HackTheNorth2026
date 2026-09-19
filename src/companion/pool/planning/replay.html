@@ -1,0 +1,31 @@
+<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pool planner · simulated game</title>
+<style>
+body{margin:0;background:#111a22;color:#ebf3f6;font:16px system-ui}main{max-width:1120px;margin:35px auto;padding:0 24px}h1{font-size:30px;margin-bottom:8px}.muted{color:#a6b9c7;font-size:14px;line-height:1.6}canvas{width:100%;background:#18242e;border-radius:18px;margin:22px 0}button,select{background:#273b4b;color:white;border:1px solid #526b7c;border-radius:7px;padding:10px;cursor:pointer}button:focus-visible,select:focus-visible{outline:3px solid #ffd27d}.controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap}input[type=range]{flex:1;min-width:150px}#summary{min-height:24px;margin-top:18px;color:#ffd27d}#ending{font-size:20px}label{font-size:14px}
+</style><main><h1>Pool planner / simulated game</h1><div class="muted">Synthetic post-break layout · exact simulated execution · center-ball direct pots<br>Yellow: solids · blue bands: stripes · black: eight · dashed line: cue aim</div>
+<canvas id="table" width="1100" height="620" aria-label="Animated top-down pool table"></canvas>
+<div class="controls"><button id="play">Play</button><button id="restart">Restart</button><select id="shot" aria-label="Choose shot"></select><input id="seek" type="range" min="0" max="1000" value="0" aria-label="Shot timeline"><select id="speed" aria-label="Playback speed"><option value="1">1× speed</option><option value="2" selected>2× speed</option><option value="4">4× speed</option></select><label><input id="guides" type="checkbox" checked>Predicted paths</label></div>
+<div id="summary"></div><p id="ending"></p><p id="assumption" class="muted"></p><div id="log" class="muted"></div></main>
+<script>
+const data=__REPLAY_DATA__;
+const canvas=document.getElementById('table'),ctx=canvas.getContext('2d'),select=document.getElementById('shot'),seek=document.getElementById('seek'),play=document.getElementById('play');
+let index=0,time=0,playing=false,last=0;
+const S=980,X=60,Y=60,point=p=>[X+p.x*S,Y+p.y*S];
+canvas.height=Math.round(data.width*S+120);
+data.shots.forEach((s,i)=>{const o=document.createElement('option');o.value=i;o.textContent=`Shot ${i+1} · ${s.player}`;select.append(o)});
+document.getElementById('ending').textContent=data.ending;
+document.getElementById('assumption').textContent=`Physics assumes a ${data.table_length_m} m long table and uncalibrated cloth/pocket properties. This replay is not a real-camera accuracy test. No banks, safeties, break shots or uncertainty modeling yet.`;
+document.getElementById('log').textContent=data.log.join(' | ');
+function line(a,b,color,dashed=false){ctx.beginPath();ctx.strokeStyle=color;ctx.lineWidth=2;ctx.setLineDash(dashed?[9,7]:[]);ctx.moveTo(...point(a));ctx.lineTo(...point(b));ctx.stroke();ctx.setLineDash([])}
+function sample(points,t){let lo=0,hi=points.length-1;while(lo<hi){let mid=Math.ceil((lo+hi)/2);if(points[mid][0]<=t)lo=mid;else hi=mid-1}let a=points[lo],b=points[Math.min(lo+1,points.length-1)];let f=b[0]>a[0]?(t-a[0])/(b[0]-a[0]):0;return [a[1]+(b[1]-a[1])*f,a[2]+(b[2]-a[2])*f,a[3]]}
+function draw(){ctx.clearRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#573b2b';ctx.fillRect(X-22,Y-22,S+44,data.width*S+44);ctx.fillStyle='#146454';ctx.fillRect(X,Y,S,data.width*S);for(const p of data.pockets){ctx.beginPath();ctx.fillStyle='#081513';ctx.arc(...point(p.position),p.mouth_width*S*.45,0,Math.PI*2);ctx.fill()}
+let shot=data.shots[index];if(!shot)return;
+if(document.getElementById('guides').checked){for(const g of shot.guides)line(g.start,g.end,g.role==='object_ball_path'?'#ffe5a15c':'#a8dfef70');if(time<.1&&shot.ghost){ctx.beginPath();ctx.strokeStyle='#fff9';ctx.arc(...point(shot.ghost),data.radius*S,0,Math.PI*2);ctx.stroke()}}
+if(time<.1){let a=shot.aim.origin,d=shot.aim.direction;line({x:a.x-.12*d.x,y:a.y-.12*d.y},{x:a.x+.1*d.x,y:a.y+.1*d.y},'#fff',true)}
+for(const b of shot.balls){const [x,y,visible]=sample(shot.trajectories[b.id],time);if(!visible)continue;const px=X+x*S,py=Y+y*S,r=data.radius*S;ctx.save();ctx.beginPath();ctx.arc(px,py,r,0,Math.PI*2);ctx.fillStyle=b.type==='solid'?'#edbd4d':b.type==='eight'?'#101820':'#fff';ctx.fill();ctx.clip();if(b.type==='stripe'){ctx.fillStyle='#418bea';ctx.fillRect(px-r,py-r*.5,r*2,r)}ctx.restore();ctx.strokeStyle='#071812';ctx.lineWidth=1;ctx.beginPath();ctx.arc(px,py,r,0,Math.PI*2);ctx.stroke();if(b.type!=='cue'){ctx.fillStyle=b.type==='eight'?'white':'#15232d';ctx.textAlign='center';ctx.textBaseline='middle';ctx.font='bold 11px system-ui';ctx.fillText(b.type==='eight'?'8':b.id.replace(/.*-/,''),px,py)}}
+seek.value=shot.duration?Math.round(time/shot.duration*1000):0;document.getElementById('summary').textContent=`Shot ${index+1}/${data.shots.length} — ${shot.summary}`;}
+function setPlay(v){playing=v;play.textContent=v?'Pause':'Play'}
+play.onclick=()=>setPlay(!playing);document.getElementById('restart').onclick=()=>{index=0;time=0;select.value=0;setPlay(false);draw()};select.onchange=()=>{index=Number(select.value);time=0;draw()};seek.oninput=()=>{setPlay(false);time=Number(seek.value)/1000*data.shots[index].duration;draw()};document.getElementById('guides').onchange=draw;
+function tick(now){if(playing&&data.shots.length){time+=(now-last)/1000*Number(document.getElementById('speed').value);if(time>data.shots[index].duration+.7){if(index+1<data.shots.length){index++;time=0;select.value=index}else{time=data.shots[index].duration;setPlay(false)}}draw()}last=now;requestAnimationFrame(tick)}
+if(!data.shots.length){play.disabled=true;seek.disabled=true;document.getElementById('summary').textContent='No supported shot found.'}draw();requestAnimationFrame(tick);
+</script></html>

@@ -11,7 +11,7 @@
 - Perception turns oblique/multiple captures into ball `(x,y,type)` data.
 - Planning aims for eventual rack success. The first display produces cue alignment; later displays add predicted paths. A plan includes called ball/pocket and cue-stick speed from the start.
 - Projection turns physical vectors into perspective-correct projector pixels.
-- The planner's implementation may use physics, ML, or RL; no algorithm/library was mandated.
+- Initial planner: Pooltool 0.6.0, bounded direct-pot angle/speed search, and nominal follow-up position scoring. See [implementation](planning.md).
 
 ## Engineering defaults in this scaffold
 
@@ -38,10 +38,10 @@ These are concrete starting conventions, not claims about selected hardware or c
 | Does 1–2 m height mean above floor or cloth, and what is table distance? | Occlusion, effective resolution, projector throw | Whole team |
 | Is pitch adjustable, and how repeatable is the base? | Whether the table can be reached and alignment retained | Hardware + projection |
 | What are the table, ball, and pocket proportions? | Width/long-side ratio, normalized collision radii, calibration | Whole team |
-| What measured or assumed physical scale will the simulator use? | Convert normalized lengths and speeds consistently for metric physics | Planning |
+| What is the measured physical table length? | Replace the explicit 2 m simulation assumption | Planning |
 | Markers/manual calibration acceptable for the demo? | Fast reliable setup versus automatic localization scope | Perception + projection |
 | Required localization/projection error and maximum latency? | Acceptance thresholds and feasible shots | Whole team |
-| What is the initial solver and scoring objective? | Physics fidelity, search cost, implementation effort | Planning |
+| What uncertainty model and deeper search should follow the nominal planner? | Real execution reliability and rack strategy | Planning |
 | How does the operator supply the current group and confirm cue-ball placement? | Explicit game context for each planning request | Planning + integration |
 | Can the projector cover the cue guidance at all relevant locations? | Target pose selection and multi-region presentation | Projection |
 | Which teammate owns scanning/application integration? | Work that crosses the three stage boundaries | Whole team |

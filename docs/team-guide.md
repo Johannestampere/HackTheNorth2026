@@ -55,16 +55,16 @@ The synthetic capture only exercises file loading; replace it with real recorded
 
 ## Teammate 2: shot planning
 
-Entry point: `src/companion/pool/planning/service.py`, `PlanningService.plan()`.
+Entry point: `src/companion/pool/planning/service.py`, `PooltoolPlanner.plan()`.
 
 Input: physical table state and explicit 8-ball context for the current shooter. Output: `PlanningReady(ShotPlan)` or an information/feasibility outcome. No image, camera, projector, or motor dependency is allowed.
 
-Suggested internal split:
+Implemented first milestone: see [planning setup, search and replay](planning.md). Internal split:
 
 ```text
 candidates.py     Target ball/pocket pairs, cue aim, speed candidates
 physics.py        Deterministic trajectory simulation behind a local interface
-scoring.py        Target success, scratch risk, difficulty, position
+service.py        Bounded search, nominal outcome and follow-up position scoring
 ```
 
 The first display shows anchored cue direction; later add cue/object-ball paths and ghost-ball position. Every successful plan already requires cue-stick speed in table lengths/second and called target ball/pocket. Each guide carries its ball ID. Keep the same `ShotPlan` boundary; display milestones are not JSON schema versions.
@@ -79,7 +79,7 @@ cue_direction = normalize(ghost_ball - cue_position)
 
 Check path clearance using ball radius, finite segments, and endpoint/contact geometry; a zero-width line intersection check is insufficient. Reject invalid/degenerate candidate geometry. Simulate a bounded set of directions/speeds, then rank according to a documented objective. Handle scratch risk and other balls as obstacles, including unknown types. Keep any metric simulator conversion inside physics.py: multiply normalized lengths and cue-stick speed by a measured or explicitly assumed physical long-side length, then convert simulated paths back. Tune rolling friction, cushion response, and speed against real observations before presenting predicted paths as accurate.
 
-Physics engines, ML, or RL can fit behind this interface. Analytic geometry plus a simple simulation is the suggested initial approach; no choice is mandated. “Best” means best among the evaluated candidates under the model. A confidence number would require uncertainty trials or evaluation, so the scaffold does not invent one.
+Pooltool 0.6.0 is the current simulator; other implementations can still fit behind the interface. “Best” means best among the evaluated candidates under the model. A confidence number would require uncertainty trials or evaluation, so the scaffold does not invent one.
 
 Acceptance evidence: direct unobstructed shot, blocked cue path, blocked target path, near-rail/degenerate shot, missing cue ball, unknown types, no feasible candidate, and assigned-group targeting, premature eight-ball rejection, and a legal eight-ball finish. Include repeatable outputs and simulated/real outcomes once a simulator exists.
 
@@ -100,7 +100,7 @@ Entry point: `src/companion/pool/projection/service.py`, `ProjectionService.rend
 
 Input: physical shot geometry plus calibrated projector target (including table geometry). Output: an RGB frame at native projector resolution. Do not run shot planning or move hardware inside this method.
 
-Suggested internal split:
+Implemented first milestone: see [planning setup, search and replay](planning.md). Internal split:
 
 ```text
 calibration.py    Resolve/estimate table-to-pixel mapping for each projector pose
@@ -144,4 +144,4 @@ Before handoff:
 4. Document calibration assumptions, units, limits, and installation needs.
 5. Integrate one stationary view and one fixed projection pose before scanning/LLM orchestration.
 
-The current tests use explicit test doubles for stage orchestration. Passing them proves contract compatibility, not functioning perception, physics, or projection.
+Orchestration tests use stage doubles. Optional planning tests exercise actual Pooltool simulations; passing them does not validate perception, physical-table calibration, or projection.

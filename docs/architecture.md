@@ -65,7 +65,7 @@ ShotRenderer.render(plan: ShotPlan, target: ProjectionTarget) -> ProjectionFrame
 TaskRouter.route(first_capture: CameraCapture) -> RoutingDecision
 ```
 
-The concrete `PerceptionService`, `PlanningService`, `ProjectionService`, and `LLMRouter` are intentionally unimplemented. No subclass declaration is required to satisfy a protocol. Shared contracts and pipeline behavior are implemented.
+The concrete `PooltoolPlanner` implements Pooltool-based direct-pot search. `PerceptionService`, `ProjectionService`, and `LLMRouter` remain unimplemented. No subclass declaration is required to satisfy a protocol. Shared contracts and pipeline behavior are implemented.
 
 ## Pool orchestration
 
@@ -102,4 +102,4 @@ Generalization has a stub `run(first_capture)` entry point. Its result schema is
 4. Add multi-view capture/fusion and repeatable rotating projector poses.
 5. Add the LLM router, then audio and generalization.
 
-The planner may use analytic geometry, a physics engine, ML, or RL internally. The recommended first milestone is direct no-spin shots with an explicit model; no specific solver dependency is imposed.
+The planner uses Pooltool 0.6.0 for direct center-ball shot simulation and a bounded heuristic search. See [planning implementation](planning.md) for scoring and limits.
