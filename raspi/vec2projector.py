@@ -233,6 +233,11 @@ class Scene:
 
 # --------------------------------------------------------------- parsing ----
 
+# Untrusted input (an LLM, another service) must never be able to crash the display.
+MAX_COORD = 1e9
+MAX_WIDTH = 1000
+
+
 def handle_line(line, scene, log):
     """Apply one protocol line to the scene. Returns False to quit."""
     line = line.strip()
@@ -268,8 +273,8 @@ def handle_line(line, scene, log):
         return True
     if head == "width" and len(parts) > 1:
         try:
-            scene.width = max(1, int(float(parts[1])))
-        except ValueError:
+            scene.width = max(1, min(MAX_WIDTH, int(float(parts[1]))))
+        except (ValueError, OverflowError):
             pass
         return True
     if head == "bg" and len(parts) > 1:
@@ -292,6 +297,9 @@ def handle_line(line, scene, log):
     except ValueError:
         log(f"bad numbers: {line!r}")
         return True
+    if not all(math.isfinite(v) and abs(v) <= MAX_COORD for v in (x1, y1, x2, y2)):
+        log(f"coordinate out of range: {line!r}")     # nan / inf / absurdly large
+        return True
 
     col, wid = scene.color, scene.width
     rest = parts[4:]
@@ -299,8 +307,8 @@ def handle_line(line, scene, log):
         col = parse_color(rest[0], col)
     if len(rest) > 1:
         try:
-            wid = max(1, int(float(rest[1])))
-        except ValueError:
+            wid = max(1, min(MAX_WIDTH, int(float(rest[1]))))
+        except (ValueError, OverflowError):
             pass
     scene.add((x1, y1, x2, y2, col, wid))
     return True
@@ -1233,13 +1241,16 @@ def main():
             if grid:
                 draw_grid(screen, mp)
             for x1, y1, x2, y2, col, wid in segs:
-                p1, p2 = mp.to_px(x1, y1), mp.to_px(x2, y2)
-                if args.arrows:
-                    draw_arrow(screen, col, p1, p2, wid)
-                elif args.aa and wid <= 1:
-                    pygame.draw.aaline(screen, col, p1, p2)
-                else:
-                    pygame.draw.line(screen, col, p1, p2, wid)
+                try:
+                    p1, p2 = mp.to_px(x1, y1), mp.to_px(x2, y2)
+                    if args.arrows:
+                        draw_arrow(screen, col, p1, p2, wid)
+                    elif args.aa and wid <= 1:
+                        pygame.draw.aaline(screen, col, p1, p2)
+                    else:
+                        pygame.draw.line(screen, col, p1, p2, wid)
+                except (ValueError, OverflowError, TypeError):
+                    continue                 # an unrenderable segment is skipped, not fatal
 
             if splash_active:
                 draw_splash(screen, splash_font, splash_lines)
