@@ -10,7 +10,7 @@ independent processes on the Pi:
 
 ```
   your server  --- HTTP on 127.0.0.1:8080 --->  vec2projector  ===HDMI==>  projector
-  (frameserver.service)                         (vec2projector.service)
+  (vec2projector-sender.service)                (vec2projector.service)
 ```
 
 `vec2projector` owns the HDMI connector from boot to power-off and never exits.
@@ -24,7 +24,8 @@ uptime. Verified behaviour: with the display killed the server logged dropped
 frames and kept running; when the display came back it resumed instantly with
 no restart on either side.
 
-Push from your server with three stdlib calls -- see `pi5/push_example.py`:
+Push from your server with three stdlib calls -- see `pi5/push_example.py`, or use the
+ready-made `sender.py` (clock, spin, line, image, clear, health):
 
 ```python
 push_image(png_bytes)             # POST /frame
@@ -46,13 +47,8 @@ timeout, no blanking, and no screensaver to fight.
 
 ### Install all of it
 
-```bash
-sudo cp pi5/vec2projector.service pi5/frameserver.service \
-        pi5/vec2projector-watchdog.service pi5/vec2projector-watchdog.timer \
-        /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now vec2projector frameserver vec2projector-watchdog.timer
-```
+`./install.sh` does this whole section (packages, groups, units, boot target); see
+README.md. Run it with `--dry-run` first to see exactly what it will change.
 
 The watchdog timer curls `/health` once a minute and restarts the display if it
 has stopped drawing -- the closest thing to a human noticing a frozen projector.
@@ -115,16 +111,14 @@ Note: `hdmi_force_hotplug=1` in `config.txt` is the Pi 4 answer and does
 
 ## 4. Autostart as a service
 
-```bash
-sudo cp pi5/vec2projector.service /etc/systemd/system/
-sudoedit /etc/systemd/system/vec2projector.service   # pick your ExecStart line
-sudo systemctl daemon-reload
-sudo systemctl enable --now vec2projector
-journalctl -u vec2projector -f
-```
+`./install.sh` renders `pi5/*.service.in` with your username, folder and port and installs
+them. To do it by hand, substitute `@USER@`, `@DIR@` and `@PORT@` in the `.in` files, copy
+the results to `/etc/systemd/system/`, then
+`sudo systemctl enable --now vec2projector vec2projector-watchdog.timer`.
 
-`Restart=always` + `RestartSec=2` means a crash or a generator that exits gets
-picked back up in two seconds, forever. `enable` covers reboots and power cuts.
+`Restart=always` + `RestartSec=2` means a crash gets picked up in two seconds, forever.
+`enable` covers reboots and power cuts. The sender is a separate, optional unit
+(`vec2projector-sender`) so a restart of your code never blanks the projector.
 
 ## 5. Optional hardening for a box nobody will touch
 
@@ -141,7 +135,7 @@ can never corrupt the SD card.
 
 ```bash
 systemctl status vec2projector
-journalctl -u vec2projector | grep driver=      # expect: driver=kmsdrm surface=(1920, 1080)
+journalctl -u vec2projector | grep output:      # expect: output: kmsdrm  1920x1080  (or: output: fb (/dev/fb0) ...)
 ```
 
 ## Pushing images instead of vectors

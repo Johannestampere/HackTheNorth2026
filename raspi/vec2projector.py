@@ -25,8 +25,10 @@ QUICK START
     python3 vec2projector.py --display 1 --udp 9000
 
     # headless Raspberry Pi wired to the projector (no desktop running):
-    # the driver is auto-selected as kmsdrm, drawing straight to HDMI.
-    # See pi5/SETUP-pi5.md for the systemd unit and the boot config.
+    # tries SDL's kmsdrm driver, then falls back to writing /dev/fb0 directly.
+    python3 vec2projector.py --http 8080 --splash
+    python3 vec2projector.py --diagnose      # what is wrong, if it will not come up
+    # See README.md in this folder and pi5/SETUP-pi5.md.
 
 WIRE PROTOCOL  (one command per line, ASCII, case-insensitive keywords)
     x1 y1 x2 y2 [color] [width]     draw a vector (the "v" is optional)
@@ -59,12 +61,18 @@ KEYS
 """
 
 import argparse
+import atexit
+import fcntl
 import io
 import json
 import math
+import mmap
 import os
 import queue
+import signal
 import socket
+import struct
+import subprocess
 import sys
 import threading
 import time
@@ -708,7 +716,307 @@ def open_screen(args, disp, log):
             return pygame.display.set_mode(size, flags, display=disp, vsync=vsync)
         except pygame.error as exc:
             last = exc
-    raise SystemExit(f"could not open a display: {last}")
+    raise RuntimeError(f"could not open a display: {last}")
+
+
+FBIOGET_VSCREENINFO = 0x4600
+KDSETMODE, KD_TEXT, KD_GRAPHICS = 0x4B3A, 0, 1
+
+
+class FbSink:
+    """Write finished frames straight into a Linux framebuffer (/dev/fb0).
+
+    The headless fallback. It needs no X, no Wayland, no OpenGL and no DRM master
+    -- only write access to the device (membership of the 'video' group). We draw
+    into an ordinary off-screen pygame surface and copy its bytes across.
+    """
+
+    def __init__(self, path, size_override=None):
+        self.path = path
+        self.fd = os.open(path, os.O_RDWR)
+        try:
+            self._geometry(size_override)
+            self.mm = mmap.mmap(self.fd, self.stride * self.height,
+                                mmap.MAP_SHARED, mmap.PROT_READ | mmap.PROT_WRITE)
+        except Exception:
+            os.close(self.fd)
+            raise
+
+    def _geometry(self, override):
+        if override:
+            self.width, self.height = override
+            bpp, offs = 32, (16, 8, 0)
+            self.stride = self.width * 4
+        else:
+            raw = fcntl.ioctl(self.fd, FBIOGET_VSCREENINFO, bytes(160))
+            (xres, yres, xv, _yv, _xo, _yo, bpp, _gray,
+             ro, _rl, _rm, go, _gl, _gm, bo, *_rest) = struct.unpack("20I", raw[:80])
+            self.width, self.height, offs = xres, yres, (ro, go, bo)
+            sysfs = f"/sys/class/graphics/{os.path.basename(self.path)}/stride"
+            try:
+                self.stride = int(open(sysfs).read())
+            except (OSError, ValueError):
+                self.stride = xv * bpp // 8
+        if bpp != 32:
+            raise RuntimeError(f"{self.path} is {bpp} bits per pixel; only 32 is supported")
+        if offs == (16, 8, 0):
+            self.fmt = "BGRA"           # memory order B,G,R,X -- the usual XRGB8888
+        elif offs == (0, 8, 16):
+            self.fmt = "RGBA"
+        else:
+            raise RuntimeError(f"{self.path} has an unsupported channel layout {offs}")
+
+    @property
+    def size(self):
+        return (self.width, self.height)
+
+    def write(self, surf):
+        data = pygame.image.tobytes(surf, self.fmt)
+        row = self.width * 4
+        if self.stride == row:
+            self.mm[0:len(data)] = data
+        else:                            # padded scanlines: copy row by row
+            mv = memoryview(data)
+            for y in range(self.height):
+                self.mm[y * self.stride:y * self.stride + row] = mv[y * row:(y + 1) * row]
+
+    def close(self):
+        try:
+            self.mm.close()
+            os.close(self.fd)
+        except (OSError, ValueError):
+            pass
+
+
+class Console:
+    """Put the active virtual terminal into graphics mode so the kernel console
+    stops drawing its cursor and text over our frames.
+
+    Only permitted for a process that has that tty as its controlling terminal
+    (the systemd unit arranges this) or for root, so over a bare SSH login it
+    warns and carries on -- a blinking cursor is then the worst that happens.
+    """
+
+    def __init__(self, log):
+        self.fd = None
+        try:
+            try:
+                tty = open("/sys/class/tty/tty0/active").read().strip() or "tty1"
+            except OSError:
+                tty = "tty1"
+            self.fd = os.open("/dev/" + tty, os.O_RDWR | os.O_NOCTTY)
+            fcntl.ioctl(self.fd, KDSETMODE, KD_GRAPHICS)
+            atexit.register(self.restore)
+            log(f"console {tty} switched to graphics mode (no cursor or text over the picture)")
+        except OSError as exc:
+            log(f"note: could not silence the text console ({exc}); a blinking cursor may show "
+                f"in the picture. The systemd service avoids this. Or run: "
+                f"sudo sh -c 'echo 0 > /sys/class/graphics/fbcon/cursor_blink'")
+            if self.fd is not None:
+                os.close(self.fd)
+                self.fd = None
+
+    def restore(self):
+        if self.fd is not None:
+            try:
+                fcntl.ioctl(self.fd, KDSETMODE, KD_TEXT)
+                os.close(self.fd)
+            except OSError:
+                pass
+            self.fd = None
+
+
+def _open_sdl(args, driver, log):
+    pygame.display.quit()
+    if driver:
+        os.environ["SDL_VIDEODRIVER"] = driver
+    else:
+        os.environ.pop("SDL_VIDEODRIVER", None)
+    pygame.display.init()
+    n = max(1, len(pygame.display.get_desktop_sizes()))
+    disp = args.display
+    if disp >= n:
+        log(f"display {disp} not found ({n} attached); using 0")
+        disp = 0
+    return open_screen(args, disp, log), None
+
+
+def _open_fb(args, log):
+    override = None
+    if args.fb_size:
+        try:
+            override = tuple(int(v) for v in args.fb_size.lower().split("x"))
+            assert len(override) == 2
+        except (ValueError, AssertionError):
+            raise RuntimeError(f"--fb-size wants WxH (got {args.fb_size!r})")
+    sink = FbSink(args.fb, override)
+    os.environ["SDL_VIDEODRIVER"] = "dummy"          # draw off-screen; we present the bytes
+    pygame.display.quit()
+    pygame.display.init()
+    return pygame.display.set_mode(sink.size), sink
+
+
+def open_output(args, log):
+    """Bring up the best output available -> (screen, FbSink or None).
+
+    With a desktop session, SDL's default driver. Headless, direct-to-HDMI via
+    kmsdrm first, then the framebuffer, and an explicit reason for every miss.
+    """
+    headless = not (os.environ.get("WAYLAND_DISPLAY") or os.environ.get("DISPLAY"))
+    forced = args.driver if args.driver != "auto" else os.environ.get("SDL_VIDEODRIVER")
+    if forced:
+        candidates = [forced]
+    elif headless:
+        candidates = ["kmsdrm", "fb"]
+    else:
+        candidates = [None]
+
+    misses = []
+    for cand in candidates:
+        name = cand or "default"
+        try:
+            screen, sink = _open_fb(args, log) if cand == "fb" else _open_sdl(args, cand, log)
+        except (RuntimeError, OSError, pygame.error) as exc:
+            misses.append(f"  {name}: {exc}")
+            log(f"output '{name}' unavailable: {exc}")
+            continue
+        log(f"output: {name}" + (f" ({args.fb})" if sink else "")
+            + f"  {screen.get_size()[0]}x{screen.get_size()[1]}")
+        return screen, sink
+    raise SystemExit("no usable display output:\n" + "\n".join(misses)
+                     + "\n\nRun  python3 " + os.path.basename(sys.argv[0])
+                     + " --diagnose  to see why.")
+
+
+def draw_splash(screen, font, lines):
+    """A test card, so a headless install can tell you it is alive."""
+    w, h = screen.get_size()
+    m = int(min(w, h) * 0.03)
+    pygame.draw.line(screen, (30, 50, 70), (m, m), (w - m, h - m), 2)
+    pygame.draw.line(screen, (30, 50, 70), (w - m, m), (m, h - m), 2)
+    pygame.draw.rect(screen, (0, 200, 140), (m, m, w - 2 * m, h - 2 * m), 4)
+    rendered = [font.render(t, True, (235, 235, 235)) for t in lines]
+    bw = max(r.get_width() for r in rendered) + 60
+    bh = sum(r.get_height() + 10 for r in rendered) + 40
+    pygame.draw.rect(screen, (0, 0, 0), ((w - bw) // 2, (h - bh) // 2, bw, bh))
+    y = (h - bh) // 2 + 20
+    for r in rendered:
+        screen.blit(r, ((w - r.get_width()) // 2, y))
+        y += r.get_height() + 10
+
+
+def diagnose():
+    """Print what stands between this machine and a picture on HDMI."""
+    import glob
+    import grp
+    import pwd
+    problems = []
+
+    def ok(m):
+        print(f"  [ok]   {m}")
+
+    def warn(m):
+        print(f"  [warn] {m}")
+
+    def bad(m, fix=None):
+        print(f"  [FAIL] {m}")
+        problems.append(fix or m)
+        if fix:
+            print(f"         fix: {fix}")
+
+    def rd(path):
+        try:
+            return open(path).read().strip()
+        except OSError:
+            return None
+
+    user = pwd.getpwuid(os.getuid()).pw_name
+    groups = {grp.getgrgid(g).gr_name for g in os.getgroups()}
+    print(f"vec2projector --diagnose   (user {user})\n\n1. permissions")
+    for g in ("video", "render"):
+        if g in groups:
+            ok(f"in group '{g}'")
+        else:
+            bad(f"not in group '{g}'",
+                f"sudo usermod -aG video,render,tty,input {user}   then log out and back in")
+
+    print("\n2. desktop / compositor (it would own the HDMI output)")
+    comps = {"Xorg", "Xwayland", "labwc", "wayfire", "weston", "sway", "gnome-shell",
+             "kwin_wayland", "kwin_x11", "mutter", "lightdm", "gdm3", "sddm"}
+    found = set()
+    for d in glob.glob("/proc/[0-9]*/comm"):
+        name = rd(d)
+        if name in comps:
+            found.add(name)
+    if found:
+        bad(f"running: {', '.join(sorted(found))}",
+            "sudo systemctl isolate multi-user.target   (this boot)   "
+            "and   sudo systemctl set-default multi-user.target   (permanent)")
+    else:
+        ok("no desktop or compositor running")
+    if os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"):
+        warn("this shell has DISPLAY/WAYLAND_DISPLAY set, so 'auto' will use the desktop path; "
+             "add --driver kmsdrm or --driver fb to force direct output")
+
+    print("\n3. HDMI connectors")
+    seen = False
+    for st in sorted(glob.glob("/sys/class/drm/card*-*/status")):
+        seen = True
+        name = st.split("/")[-2]
+        status = rd(st)
+        mode = (rd(os.path.dirname(st) + "/modes") or "").splitlines()
+        line = f"{name}: {status}" + (f", preferred {mode[0]}" if mode and status == "connected" else "")
+        (ok if status == "connected" else warn)(line)
+    if not seen:
+        bad("no DRM connectors found", "is the KMS driver enabled? (dtoverlay=vc4-kms-v3d)")
+    elif not any(rd(x) == "connected" for x in glob.glob("/sys/class/drm/card*-HDMI*/status")):
+        warn("no HDMI connector is 'connected': projector off, wrong port, or no EDID at boot. "
+             "See SETUP-pi5.md section 3 (video=HDMI-A-1:1920x1080M@60D).")
+
+    print("\n4. device access")
+    for node in sorted(glob.glob("/dev/dri/card*")):
+        (ok if os.access(node, os.R_OK | os.W_OK) else bad)(
+            f"{node} {'read/write' if os.access(node, os.R_OK | os.W_OK) else 'not accessible'}")
+    fbs = sorted(glob.glob("/dev/fb[0-9]*"))
+    if not fbs:
+        warn("no /dev/fb0 -- the framebuffer fallback is unavailable; kmsdrm is the only path")
+    for fb in fbs:
+        base = os.path.basename(fb)
+        info = (f"{rd(f'/sys/class/graphics/{base}/virtual_size')} px, "
+                f"{rd(f'/sys/class/graphics/{base}/bits_per_pixel')} bpp")
+        if os.access(fb, os.W_OK):
+            ok(f"{fb} writable ({info})")
+        else:
+            bad(f"{fb} not writable ({info})", f"add {user} to group 'video' (see above)")
+
+    print("\n5. pygame / SDL")
+    try:
+        ver = f"pygame {pygame.version.ver}, SDL {'.'.join(map(str, pygame.get_sdl_version()))}"
+        ok(ver)
+        if "/.local/" in (pygame.__file__ or "") or "site-packages" in (pygame.__file__ or ""):
+            warn("pygame comes from pip; pip wheels usually lack the kmsdrm driver. "
+                 "On a Pi prefer:  sudo apt install python3-pygame   (and pip uninstall pygame)")
+    except Exception as exc:
+        bad(f"pygame not importable: {exc}", "sudo apt install python3-pygame")
+    probe = ("import os;os.environ['SDL_VIDEODRIVER']='kmsdrm';import pygame;"
+             "pygame.display.init();print(pygame.display.get_driver())")
+    try:
+        r = subprocess.run([sys.executable, "-c", probe], capture_output=True, text=True, timeout=15)
+        if r.returncode == 0:
+            ok("SDL kmsdrm driver initialises")
+        else:
+            last = (r.stderr.strip().splitlines() or ["unknown error"])[-1]
+            warn(f"SDL kmsdrm unavailable ({last}) -- expected if a display service already "
+                 f"holds the output; otherwise the framebuffer fallback will be used")
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        warn(f"could not probe kmsdrm: {exc}")
+
+    print()
+    if problems:
+        print(f"{len(problems)} problem(s) above. Fix the [FAIL] lines first.")
+        return 1
+    print("Nothing blocking found. Start it with:  python3 vec2projector.py --http 8080 --splash")
+    return 0
 
 
 # ------------------------------------------------------------------ main ----
@@ -754,17 +1062,27 @@ def main():
     ap.add_argument("--hud", action="store_true", help="overlay fps / vector count")
     ap.add_argument("--grid", action="store_true", help="start with the reference grid on")
     ap.add_argument("--driver", default="auto",
-                    help="SDL video driver: auto (default), kmsdrm, wayland, x11, dummy")
+                    help="auto (default): desktop -> SDL default; headless -> kmsdrm then fb. "
+                         "Or force one: kmsdrm, fb, wayland, x11, dummy")
+    ap.add_argument("--fb", default="/dev/fb0", help="framebuffer device for the fb output")
+    ap.add_argument("--fb-size", metavar="WxH",
+                    help="skip querying the framebuffer and assume WxH 32bpp (testing only)")
+    ap.add_argument("--splash", action="store_true",
+                    help="show a test card until the first frame or vector arrives")
+    ap.add_argument("--diagnose", action="store_true",
+                    help="check permissions, desktop, HDMI and SDL, then exit")
     ap.add_argument("--max-vectors", type=int, default=200000,
                     help="cap on retained vectors, so a long unattended run stays bounded")
     ap.add_argument("--quiet", action="store_true", help="silence parse warnings")
     args = ap.parse_args()
     log = (lambda m: None) if args.quiet else (lambda m: print(m, file=sys.stderr, flush=True))
 
-    pick_video_driver(args.driver, log)
-    init_display(log)
+    if args.diagnose:
+        return diagnose()
 
     if args.list_displays:
+        pick_video_driver(args.driver, log)
+        init_display(log)
         sizes = pygame.display.get_desktop_sizes()
         print(f"{len(sizes)} display(s):")
         for i, (w, h) in enumerate(sizes):
@@ -774,16 +1092,9 @@ def main():
         pygame.quit()
         return 0
 
-    n_disp = max(1, len(pygame.display.get_desktop_sizes()))
-    disp = args.display
-    if disp >= n_disp:
-        print(f"display {disp} not found ({n_disp} attached); falling back to 0. "
-              f"Run --list-displays to check the HDMI output is really there.",
-              file=sys.stderr)
-        disp = 0
-
-    screen = open_screen(args, disp, log)
-    log(f"driver={pygame.display.get_driver()} surface={screen.get_size()} display={disp}")
+    screen, sink = open_output(args, log)
+    pygame.font.init()
+    console = Console(log) if sink else None
     pygame.display.set_caption("vec2projector")
     pygame.mouse.set_visible(args.windowed)
 
@@ -834,7 +1145,21 @@ def main():
     last_image_at = None
     running = True
 
-    while running:
+    quit_req = threading.Event()                 # systemd stop / Ctrl-C -> leave cleanly
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(sig, lambda *_: quit_req.set())
+    atexit.register(lambda: sink and sink.close())
+
+    splash_font = pygame.font.Font(None, max(24, screen.get_height() // 16)) if args.splash else None
+    splash_lines = ["vec2projector is running",
+                    f"{screen.get_width()}x{screen.get_height()}   "
+                    + (f"framebuffer {args.fb}" if sink else pygame.display.get_driver()),
+                    (f"waiting for frames on http://{args.http_host}:{args.http}"
+                     if args.http else "waiting for input")]
+    splash_active = args.splash
+    first_frame = True
+
+    while running and not quit_req.is_set():
         # --- drain the input queue (bounded, so a fast feed can't stall drawing)
         for _ in range(20000):
             try:
@@ -843,6 +1168,9 @@ def main():
                 break
             if item is None:
                 continue
+            if splash_active:
+                splash_active = False
+                scene.clear()
             if not handle_line(item, scene, log):
                 running = False
                 break
@@ -850,6 +1178,7 @@ def main():
         # --- newest image, if any (decode on the main thread: it owns the display)
         req = scene.image_req.take()
         if req is not None:
+            splash_active = False
             kind, val = req
             if kind == "drop":
                 layer.clear()
@@ -891,34 +1220,49 @@ def main():
                     pygame.image.save(screen, name)
                     log(f"saved {name}")
 
-        # --- draw
-        segs, bg, grid = scene.snapshot()
-        screen.fill(bg)
-        layer.blit(screen)
-        if grid:
-            draw_grid(screen, mp)
-        for x1, y1, x2, y2, col, wid in segs:
-            p1, p2 = mp.to_px(x1, y1), mp.to_px(x2, y2)
-            if args.arrows:
-                draw_arrow(screen, col, p1, p2, wid)
-            elif args.aa and wid <= 1:
-                pygame.draw.aaline(screen, col, p1, p2)
+        # --- draw (framebuffer output only redraws when something changed, so an idle
+        #     projector costs almost nothing; window outputs redraw every tick as before)
+        with scene.lock:
+            dirty, scene.dirty = scene.dirty, False
+        if sink is None or dirty or args.hud or splash_active or first_frame:
+            first_frame = False
+            segs, bg, grid = scene.snapshot()
+            screen.fill(bg)
+            layer.blit(screen)
+            if grid:
+                draw_grid(screen, mp)
+            for x1, y1, x2, y2, col, wid in segs:
+                p1, p2 = mp.to_px(x1, y1), mp.to_px(x2, y2)
+                if args.arrows:
+                    draw_arrow(screen, col, p1, p2, wid)
+                elif args.aa and wid <= 1:
+                    pygame.draw.aaline(screen, col, p1, p2)
+                else:
+                    pygame.draw.line(screen, col, p1, p2, wid)
+
+            if splash_active:
+                draw_splash(screen, splash_font, splash_lines)
+            if font:
+                hud = (f"{clock.get_fps():5.1f} fps | {len(segs):6d} vec | "
+                       f"{scene.mode} | frames {scene.frames} | img {frames_shown} | "
+                       f"q {q.qsize()}")
+                screen.blit(font.render(hud, True, (150, 150, 150)), (12, 10))
+
+            if sink is not None:
+                sink.write(screen)
             else:
-                pygame.draw.line(screen, col, p1, p2, wid)
-
-        if font:
-            hud = (f"{clock.get_fps():5.1f} fps | {len(segs):6d} vec | "
-                   f"{scene.mode} | frames {scene.frames} | img {frames_shown} | "
-                   f"q {q.qsize()}")
-            screen.blit(font.render(hud, True, (150, 150, 150)), (12, 10))
-
-        pygame.display.flip()
-        scene.dirty = False
+                pygame.display.flip()
+        else:
+            segs = scene.snapshot()[0]
 
         stats.update(clock.get_fps(), len(segs), frames_shown, last_image_at)
         clock.tick(args.fps)
 
     stop.set()
+    if console:
+        console.restore()
+    if sink:
+        sink.close()
     pygame.quit()
     return 0
 
