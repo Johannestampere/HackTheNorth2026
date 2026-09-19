@@ -76,10 +76,11 @@ accepts, so a `Projector.project(rgb, w, h)` implementation can forward frames a
 
 ## What has and has not been tested
 
-Tested on a laptop: drawing, the HTTP receiver, both outputs' logic, the sender, the
-installer's dry run, and the systemd units under `systemd-analyze verify`. The framebuffer
-output was tested against an ordinary file standing in for `/dev/fb0`, checking the actual pixel
-bytes.
+Verified on a Raspberry Pi with a real projector on HDMI: the display, `sender.py` (clock),
+the installed systemd service, and a cold power-cycle coming back up on its own.
 
-**Not yet run on a Pi 5 with a real HDMI output.** The first real-hardware run is the true test;
-if the wall stays black, `--diagnose` and `journalctl -u vec2projector` are the places to look.
+Tested only on a laptop: the framebuffer output's pixel handling (against a file standing in
+for `/dev/fb0`), the installer's dry run, `sender.py random`, and the unit files under
+`systemd-analyze verify`. Not recorded here: which output (`kmsdrm` or `fb`) the Pi used --
+`journalctl -u vec2projector | grep output:` shows it. The framebuffer path has no vsync, so
+fast animation may tear there.
