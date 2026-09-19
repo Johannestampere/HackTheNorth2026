@@ -6,7 +6,7 @@ The first tool is **pool**. The robot sits beside the table, some distance away 
 
 ## Current status
 
-The **pool planner now runs Pooltool simulations** to choose direct center-ball pots, evaluate basic shot legality, rank successes using sampled execution/position errors and bounded two-shot lookahead, and output cue aim, speed, and predicted paths. A standalone 2D replay shows synthetic game runs. Perception, projection, LLM routing, and hardware control remain stubs. See the [planning guide](docs/planning.md) for setup, scoring, and limitations.
+The **pool planner now runs Pooltool simulations** to choose direct center-ball pots, evaluate basic shot legality, rank successes using sampled execution/position errors and bounded two-shot lookahead, and output cue aim, speed, and predicted paths. A standalone 2D replay shows synthetic game runs. Perception, perspective rendering, LLM routing, and rotation control remain stubs. The merged [Raspberry Pi display](raspi/README.md) accepts RGB frames or screen-space vectors over HTTP and drives HDMI. See the [planning guide](docs/planning.md) for setup, scoring, and limitations.
 
 The fixtures are synthetic examples, not camera measurements or a validated shot recommendation. No model weights, camera SDK, LLM credentials, or hardware are required to start.
 
@@ -78,3 +78,7 @@ PYTHONPATH=src .venv/bin/python -m companion.pool.planning.demo
 ```
 
 Open `artifacts/pool-game.html` to watch the generated game. It uses actual simulated trajectories, with play/pause and shot scrubbing. Unsupported direct-pot positions cause a clearly logged demo player switch; safeties remain future work. Add `--execution-seed 23` to demonstrate assumed aim/speed errors and misses. See [details and short endgame command](docs/planning.md).
+
+## Raspberry Pi display
+
+See [raspi/README.md](raspi/README.md) for the HDMI display process, sender, and installation instructions. This is the output transport: it does not compute the table-to-projector homography. Send rendered RGB frames at the calibrated output resolution; its default vector coordinates (-1..1, center origin, y up) differ from our table coordinates.

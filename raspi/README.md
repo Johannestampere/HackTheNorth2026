@@ -18,7 +18,7 @@ sender.py (or your server) --HTTP, 127.0.0.1:8080--> vec2projector.py ==HDMI==> 
 
 ```sh
 ssh <user>@<pi>
-git clone -b raspi-projector-display https://github.com/Johannestampere/HackTheNorth2026.git
+git clone https://github.com/Johannestampere/HackTheNorth2026.git
 cd HackTheNorth2026/raspi
 
 sudo apt install -y python3-pygame       # the apt build; pip's pygame lacks direct-HDMI support
@@ -72,7 +72,9 @@ hardening: [`pi5/SETUP-pi5.md`](pi5/SETUP-pi5.md).
 
 `ProjectionFrame.rgb` (`width * height * 3` RGB8 bytes) is exactly what `POST /raw?w=&h=`
 accepts, so a `Projector.project(rgb, w, h)` implementation can forward frames as-is.
-`pi5/push_example.py` has the client functions.
+`pi5/push_example.py` has the client functions. Use the calibrated projector output resolution: image fitting/rescaling at a different display resolution changes pixel alignment.
+
+This process displays already-rendered pixels; it does not estimate or apply the pool table homography. Default vector coordinates (`-1..1`, centered, +y up) are not schema-3 table coordinates (long side 1, top-left, +y down). Table vectors must go through the projection layer before display.
 
 ## What has and has not been tested
 
