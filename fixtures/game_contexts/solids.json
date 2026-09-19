@@ -1,0 +1,9 @@
+{
+  "schema_version": 2,
+  "kind": "game_context",
+  "data": {
+    "player_group": "solids",
+    "is_break": false,
+    "ball_in_hand": false
+  }
+}

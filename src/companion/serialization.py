@@ -5,7 +5,9 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-SCHEMA_VERSION = 1
+# Version 2 makes game context explicit and replaces optional ball speed with
+# required cue-stick speed. Never silently reinterpret a version-1 shot plan.
+SCHEMA_VERSION = 2
 
 
 def read_document(path: Path, expected_kind: str) -> dict[str, Any]:

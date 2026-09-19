@@ -3,11 +3,10 @@
 import argparse
 from pathlib import Path
 
-from companion.pool.contracts import (
-    GameContext, GameMode, PerceptionReady, PlanningReady, PlayerGroup,
-)
+from companion.pool.contracts import PerceptionReady, PlanningReady
 from companion.pool.contracts.serialization import (
-    load_geometry, load_shot_plan, load_table_state, save_shot_plan, save_table_state,
+    load_game_context, load_geometry, load_shot_plan, load_table_state,
+    save_shot_plan, save_table_state,
 )
 from companion.pool.perception.service import PerceptionService
 from companion.pool.pipeline import validate_plan_for_state
@@ -28,7 +27,8 @@ def main(argv: list[str] | None = None) -> int:
     perceive.add_argument("--output", type=Path, required=True)
     plan = commands.add_parser("plan", help="Run teammate 2's implementation")
     plan.add_argument("--state", type=Path, required=True)
-    plan.add_argument("--group", choices=[group.value for group in PlayerGroup])
+    plan.add_argument("--game", type=Path, required=True,
+                      help="Versioned game_context JSON for the current shooter")
     plan.add_argument("--output", type=Path, required=True)
     render = commands.add_parser("render", help="Run teammate 3's implementation")
     render.add_argument("--plan", type=Path, required=True)
@@ -41,8 +41,15 @@ def main(argv: list[str] | None = None) -> int:
             geometry = load_geometry(args.root / "table_geometry.json")
             if state.geometry != geometry:
                 raise ValueError("Sample state and geometry fixture differ")
+            game = load_game_context(args.root / "game_contexts" / "solids.json")
             for name in ("aim_only", "direct_shot"):
-                validate_plan_for_state(load_shot_plan(args.root / "shot_plans" / f"{name}.json"), state)
+                validate_plan_for_state(
+                    load_shot_plan(args.root / "shot_plans" / f"{name}.json"), state, game
+                )
+            validate_plan_for_state(
+                load_shot_plan(args.root / "shot_plans" / "eight_ball_finish.json"),
+                load_table_state(args.root / "table_states" / "eight_ball_finish.json"), game,
+            )
             target = load_projection_target(args.root / "projection_targets" / "synthetic.json")
             if target.table_id != state.geometry.table_id:
                 raise ValueError("Fixture projector target uses a different coordinate frame")
@@ -60,14 +67,13 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             save_table_state(args.output, result.state)
         elif args.command == "plan":
-            game = (GameContext(GameMode.GROUP_PRACTICE, PlayerGroup(args.group))
-                    if args.group else GameContext())
+            game = load_game_context(args.game)
             state = load_table_state(args.state)
             result = PlanningService().plan(state, game)
             if not isinstance(result, PlanningReady):
                 print(f"{type(result).__name__}: {result.reason}")
                 return 1
-            validate_plan_for_state(result.plan, state)
+            validate_plan_for_state(result.plan, state, game)
             save_shot_plan(args.output, result.plan)
         elif args.command == "render":
             plan = load_shot_plan(args.plan)

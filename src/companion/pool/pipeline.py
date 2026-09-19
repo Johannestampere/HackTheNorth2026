@@ -5,8 +5,9 @@ from dataclasses import dataclass
 from companion.sensors.models import CaptureBatch
 
 from .contracts import (
-    BallType, GameContext, InsufficientInformation, NeedsMoreViews, NoFeasibleShot,
-    PerceptionReady, PlanningReady, ShotPlan, TableGeometry, TableState, UnusableCapture,
+    BallType, CoverageStatus, GameContext, GuideRole, InsufficientInformation,
+    NeedsMoreViews, NoFeasibleShot, PerceptionReady, PlanningReady, PlayerGroup,
+    ShotPlan, TableGeometry, TableState, UnusableCapture,
 )
 from .perception.interface import TablePerception
 from .planning.interface import ShotPlanner
@@ -14,19 +15,48 @@ from .projection.interface import ShotRenderer
 from .projection.models import ProjectionFrame, ProjectionTarget
 
 
-def validate_plan_for_state(plan: ShotPlan, state: TableState) -> None:
+def validate_plan_for_state(plan: ShotPlan, state: TableState, game: GameContext) -> None:
+    """Check stage handoff references and MVP target eligibility, not shot physics.
+
+    A valid reference to the eight ball is not proof of a legal winning outcome:
+    planning must still evaluate first contact, fouls, and the called pocket in
+    simulated events. These checks only catch inconsistent recommendations.
+    """
     if plan.observation_id != state.observation_id or plan.table_id != state.geometry.table_id:
         raise ValueError("Shot plan does not belong to this observation/table frame")
+    if state.coverage is not CoverageStatus.COMPLETE:
+        raise ValueError("A shot plan requires a complete table observation")
+    if game.player_group is None or game.is_break or game.ball_in_hand:
+        raise ValueError("A ready MVP plan requires assigned groups and an ordinary placed-ball shot")
     balls = {ball.id: ball for ball in state.balls}
     cue = balls.get(plan.cue_aim.cue_ball_id)
     if cue is None or cue.type is not BallType.CUE or cue.position != plan.cue_aim.origin:
         raise ValueError("Cue aim must reference the observed cue ball at its original position")
-    if plan.target_ball_id is not None:
-        if plan.target_ball_id not in balls or plan.target_ball_id == cue.id:
-            raise ValueError("Target ball must identify an observed object ball")
-    if plan.target_pocket_id is not None:
-        if plan.target_pocket_id not in {p.id for p in state.geometry.pockets}:
-            raise ValueError("Target pocket must belong to this table")
+    if plan.target_ball_id not in balls or plan.target_ball_id == cue.id:
+        raise ValueError("Target ball must identify an observed object ball")
+    if plan.target_pocket_id not in {p.id for p in state.geometry.pockets}:
+        raise ValueError("Target pocket must belong to this table")
+
+    own_type = BallType.SOLID if game.player_group is PlayerGroup.SOLIDS else BallType.STRIPE
+    own_balls_remain = any(ball.type is own_type for ball in state.balls)
+    target = balls[plan.target_ball_id]
+    if own_balls_remain:
+        if target.type is not own_type:
+            raise ValueError("Called target must belong to the shooter's uncleared group")
+    else:
+        # Unknown balls could belong to the shooter; never mistake them for a
+        # cleared group and authorize an early eight-ball attempt.
+        if any(ball.type is BallType.UNKNOWN for ball in state.balls):
+            raise ValueError("Unknown ball types prevent confirming eight-ball eligibility")
+        if target.type is not BallType.EIGHT:
+            raise ValueError("After clearing the shooter's group, the called target must be the eight")
+
+    for guide in plan.guides:
+        if guide.ball_id not in balls:
+            raise ValueError("Guide must reference an observed ball")
+        is_cue_guide = guide.role is not GuideRole.OBJECT_BALL_PATH
+        if is_cue_guide != (guide.ball_id == cue.id):
+            raise ValueError("Guide role does not match its cue/object ball ID")
 
 
 @dataclass(frozen=True)
@@ -71,7 +101,7 @@ class PoolPipeline:
         if not isinstance(planning, PlanningReady):
             raise TypeError("Unexpected planning result")
         plan = planning.plan
-        validate_plan_for_state(plan, state)
+        validate_plan_for_state(plan, state, game)
         frame = self.renderer.render(plan, target)
         if (frame.observation_id, frame.table_id, frame.calibration_id, frame.pose_id,
             frame.width_px, frame.height_px) != (

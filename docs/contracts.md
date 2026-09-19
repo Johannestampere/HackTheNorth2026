@@ -1,10 +1,10 @@
-# Shared contracts: schema version 1
+# Shared contracts: schema version 2
 
 Source under `src/companion/pool/contracts/` is authoritative for field names and enum values. This document defines their meaning. Changes to stage boundaries require team agreement and updated fixtures.
 
 ## Coordinates and identity
 
-- All table positions/distances use **meters**; optional cue-ball speed uses meters/second.
+- All table positions/distances use **meters**; cue-stick strike speed uses meters/second.
 - Origin is a physically marked corner of the playing surface, not the outside of the rails. +x follows its long edge; +y follows its short edge. +z points above the cloth. Mark and photograph the axes before calibrating.
 - The cloth is `z=0`; the playing rectangle is `[0, length_m] × [0, width_m]`.
 - A ball's position is the physical sphere center's `(x,y)`, vertically projected onto the cloth. The actual center is at `z=ball_radius_m`. It is not an image bounding-box center.
@@ -58,14 +58,29 @@ Coverage is complete only when no unresolved unobserved/occluded region may conc
 - `NeedsMoreViews(reason, missing_regions=(), partial_state=None)`: missing regions are polygons of table-coordinate points. Empty means the region cannot yet be localized.
 - `UnusableCapture(reason)`: for motion, severe blur, missing calibration, or other unusable captures. The application decides how to recapture.
 
-## Game context
+## Game context: operator → planning
 
-The scaffold supports two practice modes:
+The objective is to select the current shot for the shooter's eventual rack success, including a legal eight-ball finish. The initial rules baseline is [WPA 8-ball, effective September 15, 2025](https://wpapool.com/wp-content/uploads/2025/09/2025.09.15-WPA-Rules.pdf). The contract supports ordinary pot attempts; it does not implement a complete referee or simulator.
 
-- `GameContext(mode=DEMO)`: consider solid/stripe targets; the eight ball is an obstacle.
-- `GameContext(mode=GROUP_PRACTICE, player_group=SOLIDS|STRIPES)`: consider only the selected group; the eight ball remains an obstacle.
+`GameContext` is supplied by the application/operator, **not inferred by perception**:
 
-These modes are **not a regulation eight-ball rules engine**. Unknown balls remain obstacles but are not assumed to be legal targets. Full rules, winning-shot legality, fouls, ball-in-hand, and turn tracking require an agreed extension. Positions alone cannot establish those facts.
+| Field | Meaning |
+| --- | --- |
+| `player_group` | Required: `solids`, `stripes`, or explicit `null` for open/unknown assignment |
+| `is_break` | Boolean, default false; true means the opening break |
+| `ball_in_hand` | Boolean, default false; true means cue-ball placement is still part of the decision |
+
+The MVP requires assigned groups, after the break, and a placed cue ball. Break, open/unknown assignment, and ball-in-hand inputs return `InsufficientInformation` instead of being silently treated as ordinary play. After a human places the cue ball, recapture it and supply `ball_in_hand=false` for the aim-only placement scope.
+
+While own-group balls remain, the called target must belong to that group. Once the group is cleared, the called target is the eight. Derive remaining balls from the complete observation; do not maintain a duplicate count or `can_hit_eight` flag. Unknown types prevent confirming that a group is cleared. Unknown balls are still physical obstacles.
+
+```python
+from companion.pool.contracts import GameContext, PlayerGroup
+
+game = GameContext(player_group=PlayerGroup.SOLIDS)
+```
+
+Planning must evaluate first contact, scratches/fouls, the intended called pocket, and terminal rack outcomes from simulated events. A legal target ID alone does not establish a legal shot or a win. During lookahead, a legal pot normally retains the shooter's turn; do not blindly alternate turns at each depth. Search scores and sampled probabilities stay internal until their semantics and calibration are established.
 
 ## Planning → projection
 
@@ -74,11 +89,13 @@ These modes are **not a regulation eight-ball rules engine**. Unknown balls rema
 | `observation_id` | Yes | Source state ID |
 | `table_id` | Yes | Source geometry's coordinate-frame ID |
 | `cue_aim` | Yes | `CueAim(cue_ball_id, origin, direction)` |
-| `guides` | Defaults to empty | Tuple of `GuideSegment(role, segment)` |
+| `guides` | Defaults to empty | Tuple of `GuideSegment(role, ball_id, segment)` |
 | `ghost_ball` | Optional | Cue-ball center at first object-ball contact |
-| `target_ball_id` | Optional | An observed object ball |
-| `target_pocket_id` | Optional | A pocket in the table geometry |
-| `suggested_cue_ball_speed_mps` | Optional | Positive initial cue-ball speed, not cue-stick speed or arbitrary power |
+| `target_ball_id` | Yes | Observed object ball for the intended called pot, including a legal eight-ball attempt |
+| `target_pocket_id` | Yes | Intended called pocket from table geometry |
+| `cue_stick_speed_mps` | Yes | Positive cue-tip speed immediately before impact, in m/s; not initial cue-ball speed |
+
+**Strike assumption:** level, center-ball hit, with no intentional tip offset. The direction is unit length and contains no power information. Even an aim-only display needs an explicit planned speed: later motion depends on it. The simulator adapter must not substitute initial cue-ball speed for cue-stick speed. A UI may show the physical speed or a separately calibrated strength label; the renderer must not invent a percentage. Spin/elevation controls are outside the current contract.
 
 `CueAim.origin` copies the cue-ball position exactly from the source state. Do not round/mutate it. A bare vector without an origin is insufficient to draw guidance.
 
@@ -91,7 +108,11 @@ Guide roles:
 | `cue_ball_after_contact` | Predicted cue-ball center path after contact |
 | `object_ball_path` | Predicted object-ball center path |
 
-V1 returns cue aim and preferably one alignment segment. The renderer must also accept no guides, using a documented default alignment length clipped to the table/projectable area. V2 adds paths and optional ghost-ball/target metadata using the same schema. The aim remains authoritative. Multiple ordered segments of one role can represent cushion bounces for one path. Multiple simultaneously moving object-ball paths require a future per-path ball identifier.
+The first visual version draws cue aim; later versions add paths using the same schema. `guides=()` means the renderer draws alignment from `cue_aim` with a documented default length clipped to the table/projectable area. It does not mean a zero-length shot or stationary balls. Called target and strike speed remain required even when no trajectories are displayed.
+
+Each guide has an observed `ball_id`. Cue alignment and cue-ball path roles must reference the cue ball; `object_ball_path` must reference an object ball. Multiple segments for a ball are in travel order. The list is not a globally synchronized timeline across balls. Paths are nominal ball-center predictions conditional on the planned strike and physics model; they are not guaranteed outcomes or uncertainty bands.
+
+Safety shots, bank/kick-specific metadata, spin controls, confidence percentages, and training data are not added to this shared contract. Introduce fields only when a consumer needs them. In particular, a future safety representation must be agreed before relaxing the required called-pot fields.
 
 The planner owns physical endpoints and predictions. The renderer owns colors, stroke widths, annotation placement, and clipping. It must not invent predicted trajectories when absent. Ghost-ball radius and playing-area boundaries come from the projection target's table geometry.
 
@@ -119,7 +140,7 @@ All JSON files have the same envelope:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "kind": "shot_plan",
   "data": {
     "observation_id": "example-observation",
@@ -128,13 +149,28 @@ All JSON files have the same envelope:
       "cue_ball_id": "cue",
       "origin": {"x": 0.6, "y": 0.3},
       "direction": {"x": 1.0, "y": 0.0}
-    }
+    },
+    "cue_stick_speed_mps": 1.5,
+    "target_ball_id": "solid-1",
+    "target_pocket_id": "xmax-ymax"
   }
 }
 ```
 
-Kinds: `capture_batch`, `table_geometry`, `table_state`, `shot_plan`, `projection_target`. Enum values are lowercase strings; tuples are arrays in JSON. Optional fields can be omitted where defaults exist; `guides` can be omitted but cannot be `null`. Use shared codecs, not custom JSON/pickle per stage. Unsupported versions, unknown enum values/fields, and invalid geometry are rejected.
+Kinds: `capture_batch`, `table_geometry`, `table_state`, `game_context`, `shot_plan`, `projection_target`. Enum values are lowercase strings; tuples are arrays in JSON. Optional fields can be omitted where defaults exist; `guides` can be omitted but cannot be `null`. Use shared codecs, not custom JSON/pickle per stage. Unsupported versions, unknown enum values/fields, and invalid geometry are rejected.
 
 Expected result variants are in-process dataclasses. CLI success writes a state/plan/frame and exits 0. An expected non-ready outcome prints its type/reason and exits 1. Invalid input or an unimplemented stage exits 2. Consumers must check exit status and must not reuse an old output file after failure.
 
 Breaking schema changes require agreement, a version update, and fixture/test updates. Stage-internal experiments do not need to change shared types.
+
+## Migrating from schema 1
+
+- Every JSON envelope now uses version **2**; version 1 is rejected. The camera/table/target payload shapes are otherwise unchanged.
+- Remove `GameMode` and its practice defaults. Construct `GameContext(player_group=...)` explicitly, or use `load_game_context()` with the new `game_context` fixture.
+- Planning CLI now requires `--game fixtures/game_contexts/solids.json`; `--group` is removed. There is no implicit player-group selection.
+- Replace `suggested_cue_ball_speed_mps` with required `cue_stick_speed_mps`. **Do not copy the old number:** these are different physical velocities. Regenerate the plan or explicitly convert using the strike model.
+- Supply required called ball/pocket IDs and a `ball_id` on every guide. Do not infer a missing target from a drawing.
+- `validate_plan_for_state(plan, state, game)` now requires the game context and checks MVP target eligibility and guide references. It still does not validate simulated physics/fouls.
+- Use the updated synthetic fixtures as the reference for both an ordinary pot and an eight-ball finish. Their 1.5 m/s strike speed is illustrative, not measured or optimized.
+
+Visual milestone names (aim-only now, trajectories later) are separate from JSON schema versions. All milestones use schema 2.

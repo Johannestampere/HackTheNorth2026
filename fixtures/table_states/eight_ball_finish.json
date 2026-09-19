@@ -2,7 +2,7 @@
   "schema_version": 2,
   "kind": "table_state",
   "data": {
-    "observation_id": "synthetic-observation-001",
+    "observation_id": "synthetic-eight-finish-001",
     "capture_started_at_s": 1000.0,
     "capture_ended_at_s": 1000.0,
     "geometry": {
@@ -73,16 +73,6 @@
         "position_uncertainty_m": null
       },
       {
-        "id": "solid-1",
-        "position": {
-          "x": 1.2,
-          "y": 0.6
-        },
-        "type": "solid",
-        "type_confidence": null,
-        "position_uncertainty_m": null
-      },
-      {
         "id": "stripe-1",
         "position": {
           "x": 1.5,
@@ -95,8 +85,8 @@
       {
         "id": "eight",
         "position": {
-          "x": 0.9,
-          "y": 0.8
+          "x": 1.2,
+          "y": 0.6
         },
         "type": "eight",
         "type_confidence": null,

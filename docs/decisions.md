@@ -9,7 +9,7 @@
 - Pool is implemented first. Generalization remains a separate future module.
 - Three teammates own perception, planning, and projection respectively.
 - Perception turns oblique/multiple captures into ball `(x,y,type)` data.
-- Planning v1 produces cue alignment; v2 adds predicted paths and related shot guidance.
+- Planning aims for eventual rack success. The first display produces cue alignment; later displays add predicted paths. A plan includes called ball/pocket and cue-stick speed from the start.
 - Projection turns physical vectors into perspective-correct projector pixels.
 - The planner's implementation may use physics, ML, or RL; no algorithm/library was mandated.
 
@@ -24,7 +24,7 @@ These are concrete starting conventions, not claims about selected hardware or c
 - RGB-only capture contract; estimated depth stays internal to perception.
 - Explicit partial/unusable/no-shot outcomes instead of fake successful results.
 - Observation/table/calibration/pose IDs to catch inconsistent handoffs.
-- Demo and selected-group practice modes, not a complete eight-ball rules engine.
+- Schema 2 uses explicit WPA 8-ball context. MVP scope is after the break with assigned groups and a placed cue ball, including legal eight-ball finishes. A complete rules engine is not implemented.
 - RGB8 byte frames with PPM export for dependency-free inspection.
 - A fixed-pose homography target first; rotating target selection and scan orchestration remain future application work.
 - No automatic model downloads, LLM calls, hardware commands, commits, or pushes.
@@ -41,7 +41,7 @@ These are concrete starting conventions, not claims about selected hardware or c
 | Markers/manual calibration acceptable for the demo? | Fast reliable setup versus automatic localization scope | Perception + projection |
 | Required localization/projection error and maximum latency? | Acceptance thresholds and feasible shots | Whole team |
 | What is the initial solver and scoring objective? | Physics fidelity, search cost, implementation effort | Planning |
-| Demo targeting or selected-group practice at presentation time? | Operator input and candidate filtering | Planning + integration |
+| How does the operator supply the current group and confirm cue-ball placement? | Explicit game context for each planning request | Planning + integration |
 | Can the projector cover the cue guidance at all relevant locations? | Target pose selection and multi-region presentation | Projection |
 | Which teammate owns scanning/application integration? | Work that crosses the three stage boundaries | Whole team |
 | Which LLM/provider and routing behavior on uncertainty? | Future tool router implementation | Integration |

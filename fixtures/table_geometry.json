@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "kind": "table_geometry",
   "data": {
     "table_id": "synthetic-table-v1",

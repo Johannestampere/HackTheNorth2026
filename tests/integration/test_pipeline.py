@@ -4,13 +4,14 @@ from pathlib import Path
 from unittest.mock import create_autospec
 
 from companion.pool.contracts import (
-    GameContext, InsufficientInformation, NeedsMoreViews, NoFeasibleShot,
-    PerceptionReady, PlanningReady, Point2, UnusableCapture,
+    BallType, GameContext, InsufficientInformation, NeedsMoreViews, NoFeasibleShot,
+    PerceptionReady, PlanningReady, PlayerGroup, Point2, UnusableCapture,
 )
 from companion.pool.contracts.serialization import load_shot_plan, load_table_state
 from companion.pool.perception.interface import TablePerception
-from companion.pool.pipeline import PoolPipeline, PreparedProjection
+from companion.pool.pipeline import PoolPipeline, PreparedProjection, validate_plan_for_state
 from companion.pool.planning.interface import ShotPlanner
+from companion.pool.planning.service import PlanningService
 from companion.pool.projection.interface import ShotRenderer
 from companion.pool.projection.models import ProjectionFrame, load_projection_target
 from companion.sensors.models import load_capture_batch
@@ -24,7 +25,7 @@ class PipelineTests(unittest.TestCase):
         self.plan = load_shot_plan(FIXTURES / "shot_plans/direct_shot.json")
         self.target = load_projection_target(FIXTURES / "projection_targets/synthetic.json")
         self.captures = load_capture_batch(FIXTURES / "captures/synthetic.json")
-        self.game = GameContext()
+        self.game = GameContext(PlayerGroup.SOLIDS)
         self.perception = create_autospec(TablePerception, instance=True)
         self.planner = create_autospec(ShotPlanner, instance=True)
         self.renderer = create_autospec(ShotRenderer, instance=True)
@@ -87,6 +88,40 @@ class PipelineTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.prepare()
         self.perception.estimate.assert_not_called()
+
+    def test_premature_eight_and_opponent_ball_are_rejected(self):
+        for target in ("eight", "stripe-1"):
+            with self.subTest(target=target):
+                self.planner.plan.return_value = PlanningReady(replace(self.plan, target_ball_id=target))
+                with self.assertRaisesRegex(ValueError, "uncleared group"):
+                    self.prepare()
+                self.renderer.render.assert_not_called()
+
+    def test_cleared_group_allows_eight_ball_finish(self):
+        state = load_table_state(FIXTURES / "table_states/eight_ball_finish.json")
+        plan = load_shot_plan(FIXTURES / "shot_plans/eight_ball_finish.json")
+        validate_plan_for_state(plan, state, self.game)
+        unknown = replace(state.balls[1], type=BallType.UNKNOWN)
+        uncertain_state = replace(state, balls=(state.balls[0], unknown, state.balls[2]))
+        with self.assertRaisesRegex(ValueError, "Unknown ball types"):
+            validate_plan_for_state(plan, uncertain_state, self.game)
+
+    def test_guide_ball_identity_must_match_role_and_observation(self):
+        for ball_id in ("missing", "solid-1"):
+            with self.subTest(ball_id=ball_id):
+                guide = replace(self.plan.guides[0], ball_id=ball_id)
+                self.planner.plan.return_value = PlanningReady(replace(self.plan, guides=(guide,)))
+                with self.assertRaisesRegex(ValueError, "Guide"):
+                    self.prepare()
+                self.renderer.render.assert_not_called()
+
+    def test_unsupported_context_is_not_silently_treated_as_normal_play(self):
+        for game in (GameContext(None), GameContext(PlayerGroup.SOLIDS, is_break=True),
+                     GameContext(PlayerGroup.SOLIDS, ball_in_hand=True)):
+            with self.subTest(game=game):
+                self.assertIsInstance(PlanningService().plan(self.state, game), InsufficientInformation)
+                with self.assertRaisesRegex(ValueError, "ordinary placed-ball"):
+                    validate_plan_for_state(self.plan, self.state, game)
 
     def test_frame_pose_and_calibration_must_match_target(self):
         for field in ("pose_id", "calibration_id", "observation_id"):

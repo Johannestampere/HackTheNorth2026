@@ -120,31 +120,35 @@ class TableState:
                 raise ValueError(f"Ball {ball.id} is outside the playing surface")
 
 
-class GameMode(str, Enum):
-    DEMO = "demo"
-    GROUP_PRACTICE = "group_practice"
-
-
 class PlayerGroup(str, Enum):
+    """The current shooter's assigned group in 8-ball."""
+
     SOLIDS = "solids"
     STRIPES = "stripes"
 
 
 @dataclass(frozen=True)
 class GameContext:
-    """Choose any solid/stripe target in demo mode, or a selected practice group.
+    """Operator-supplied context for the current shot under WPA 8-ball rules.
 
-    This is not a full eight-ball rules engine; the eight ball stays an obstacle.
+    ``player_group`` is the current shooter's group, not a camera prediction.
+    None explicitly means the table is open or the assignment is unknown.
+    ``is_break`` distinguishes the opening break from an ordinary shot.
+    ``ball_in_hand`` means the shooter may place the cue ball before striking.
+
+    The MVP handles assigned groups, after the break, with the cue ball already
+    placed. Other contexts must return InsufficientInformation rather than be
+    treated as an ordinary shot. An eight-ball finish is allowed once the current
+    group is cleared; derive that from a complete TableState instead of keeping
+    a second, potentially stale remaining-ball count here.
     """
 
-    mode: GameMode = GameMode.DEMO
-    player_group: PlayerGroup | None = None
+    player_group: PlayerGroup | None
+    is_break: bool = False
+    ball_in_hand: bool = False
 
     def __post_init__(self) -> None:
-        if not isinstance(self.mode, GameMode):
-            raise ValueError("mode must be a GameMode enum")
-        if self.mode is GameMode.GROUP_PRACTICE:
-            if not isinstance(self.player_group, PlayerGroup):
-                raise ValueError("Group practice requires a player group")
-        elif self.player_group is not None:
-            raise ValueError("Demo mode does not take a player group")
+        if self.player_group is not None and not isinstance(self.player_group, PlayerGroup):
+            raise ValueError("player_group must be a PlayerGroup enum or None")
+        if type(self.is_break) is not bool or type(self.ball_in_hand) is not bool:
+            raise ValueError("is_break and ball_in_hand must be booleans")

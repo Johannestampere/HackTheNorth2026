@@ -2,7 +2,7 @@
   "schema_version": 2,
   "kind": "shot_plan",
   "data": {
-    "observation_id": "synthetic-observation-001",
+    "observation_id": "synthetic-eight-finish-001",
     "table_id": "synthetic-table-v1",
     "cue_aim": {
       "cue_ball_id": "cue",
@@ -56,14 +56,14 @@
             "y": 1
           }
         },
-        "ball_id": "solid-1"
+        "ball_id": "eight"
       }
     ],
     "ghost_ball": {
       "x": 1.1488834860343549,
       "y": 0.5744417430171774
     },
-    "target_ball_id": "solid-1",
+    "target_ball_id": "eight",
     "target_pocket_id": "xmax-ymax",
     "cue_stick_speed_mps": 1.5
   }

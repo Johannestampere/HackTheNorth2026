@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "kind": "shot_plan",
   "data": {
     "observation_id": "synthetic-observation-001",
@@ -15,24 +15,10 @@
         "y": 0.4472135954999579
       }
     },
-    "guides": [
-      {
-        "role": "cue_alignment",
-        "segment": {
-          "start": {
-            "x": 0.28695048315002947,
-            "y": 0.14347524157501473
-          },
-          "end": {
-            "x": 0.5744417430171774,
-            "y": 0.2872208715085887
-          }
-        }
-      }
-    ],
+    "guides": [],
     "ghost_ball": null,
-    "target_ball_id": null,
-    "target_pocket_id": null,
-    "suggested_cue_ball_speed_mps": null
+    "target_ball_id": "solid-1",
+    "target_pocket_id": "xmax-ymax",
+    "cue_stick_speed_mps": 1.5
   }
 }

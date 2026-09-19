@@ -69,7 +69,7 @@ The concrete `PerceptionService`, `PlanningService`, `ProjectionService`, and `L
 
 ## Pool orchestration
 
-`PoolPipeline.prepare(captures, geometry, game, target)` performs one pass through the three interfaces. It returns `PreparedProjection(state, plan, frame)` or propagates an expected incomplete/unsuccessful outcome. It checks geometry identity, plan observation provenance, ball/pocket references, and output frame provenance/resolution.
+`PoolPipeline.prepare(captures, geometry, game, target)` performs one pass through the three interfaces. It returns `PreparedProjection(state, plan, frame)` or propagates an expected incomplete/unsuccessful outcome. It checks geometry identity, plan observation provenance, called ball/pocket eligibility for the current group, guide ball IDs, and output frame provenance/resolution. These are handoff checks, not a substitute for rules evaluation on simulated events.
 
 It **does not acquire images, scan, retry, rotate, or project**. This bounded method is usable in tests before any hardware exists. The future application flow will:
 
@@ -90,7 +90,7 @@ The pipeline's ID checks do not establish real-world freshness. Motion detection
 
 `ToolName` is an allowlist containing `pool` and `generalization`. A future LLM adapter must parse its response into a `RoutingDecision`; the application dispatches on that enum. Do not execute arbitrary tool names or generated Python.
 
-Pool can receive `GameContext` from the UI/operator independently of the router. Ball positions alone do not identify turn, assigned group, fouls, or complete game state.
+Pool receives explicit `GameContext` from the UI/operator independently of the router. The MVP plans called pot attempts in 8-ball after the break with assigned groups and a placed cue ball, including the eight once the group is cleared. Ball positions alone do not identify the current player or assigned group. `ShotPlan` includes cue-stick speed separately from unit aim; physics/search remain private to planning.
 
 Generalization has a stub `run(first_capture)` entry point. Its result schema is deliberately deferred; do not force general-purpose guidance into `ShotPlan`. Audio has no placeholder data contract yet because device and synchronization requirements are still undecided.
 

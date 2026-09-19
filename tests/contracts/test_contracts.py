@@ -5,11 +5,12 @@ from dataclasses import replace
 from pathlib import Path
 
 from companion.pool.contracts import (
-    BallType, CoverageStatus, GameContext, GameMode, PerceptionReady,
+    BallType, CoverageStatus, GameContext, PerceptionReady, PlayerGroup,
     Point2, UnitVector2,
 )
 from companion.pool.contracts.serialization import (
-    load_shot_plan, load_table_state, save_shot_plan, save_table_state,
+    load_game_context, load_shot_plan, load_table_state,
+    save_game_context, save_shot_plan, save_table_state,
 )
 from companion.pool.projection.models import ProjectionFrame, load_projection_target
 from companion.sensors.models import load_capture_batch
@@ -32,10 +33,11 @@ class ContractTests(unittest.TestCase):
             self.assertEqual(load_shot_plan(plan_path), self.plan)
             self.assertIsInstance(load_table_state(state_path).balls[0].type, BallType)
 
-    def test_minimal_v1_plan_does_not_require_v2_fields(self):
+    def test_aim_only_plan_requires_strike_and_call_but_not_paths(self):
         data = json.loads((FIXTURES / "shot_plans/aim_only.json").read_text())
         data["data"] = {key: data["data"][key] for key in (
-            "observation_id", "table_id", "cue_aim"
+            "observation_id", "table_id", "cue_aim", "cue_stick_speed_mps",
+            "target_ball_id", "target_pocket_id",
         )}
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "minimal.json"
@@ -83,9 +85,37 @@ class ContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             PerceptionReady(replace(self.state, coverage=CoverageStatus.PARTIAL))
 
-    def test_group_practice_requires_explicit_group(self):
+    def test_game_context_round_trip_keeps_unknown_group_explicit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "game.json"
+            for game in (GameContext(PlayerGroup.SOLIDS), GameContext(None, is_break=True),
+                         GameContext(PlayerGroup.STRIPES, ball_in_hand=True)):
+                with self.subTest(game=game):
+                    save_game_context(path, game)
+                    self.assertEqual(load_game_context(path), game)
         with self.assertRaises(ValueError):
-            GameContext(mode=GameMode.GROUP_PRACTICE)
+            GameContext(PlayerGroup.SOLIDS, ball_in_hand="false")
+
+    def test_schema_one_is_rejected_instead_of_reinterpreting_speed(self):
+        document = json.loads((FIXTURES / "shot_plans/direct_shot.json").read_text())
+        document["schema_version"] = 1
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "old-plan.json"
+            path.write_text(json.dumps(document))
+            with self.assertRaisesRegex(ValueError, "Unsupported schema"):
+                load_shot_plan(path)
+
+    def test_strike_speed_must_be_explicit_positive_and_finite(self):
+        for speed in (0, -1, float("inf"), float("nan")):
+            with self.subTest(speed=speed), self.assertRaises(ValueError):
+                replace(self.plan, cue_stick_speed_mps=speed)
+        document = json.loads((FIXTURES / "shot_plans/direct_shot.json").read_text())
+        del document["data"]["cue_stick_speed_mps"]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "missing-speed.json"
+            path.write_text(json.dumps(document))
+            with self.assertRaises(TypeError):
+                load_shot_plan(path)
 
     def test_capture_paths_are_manifest_relative(self):
         batch = load_capture_batch(FIXTURES / "captures/synthetic.json")

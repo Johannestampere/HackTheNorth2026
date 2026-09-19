@@ -35,8 +35,10 @@ Installation may download the setuptools build backend; the `PYTHONPATH` command
 | Owner | Directory | Input | Output |
 | --- | --- | --- | --- |
 | Teammate 1: perception | `src/companion/pool/perception/` | RGB capture batch + known table geometry | `TableState`: ball positions/types, coverage |
-| Teammate 2: planning | `src/companion/pool/planning/` | `TableState` + `GameContext` | `ShotPlan`: cue aim and optional guidance |
+| Teammate 2: planning | `src/companion/pool/planning/` | `TableState` + `GameContext` | `ShotPlan`: cue aim, cue-stick speed, called pot, optional guides |
 | Teammate 3: projection | `src/companion/pool/projection/` | `ShotPlan` + calibrated `ProjectionTarget` | `ProjectionFrame`: packed RGB pixels |
+
+**Contract version: 2.** Planning takes explicit 8-ball game context. Shot plans require a called ball/pocket and cue-stick speed in m/s, separate from the unit aim direction. See the [migration notes](docs/contracts.md#migrating-from-schema-1) before using older fixtures.
 
 All positions crossing pool stage boundaries are **meters in the same table coordinate frame**. Camera pixels, projector pixels, motor angles, and table coordinates are distinct quantities.
 
@@ -57,6 +59,7 @@ PYTHONPATH=src python3.11 -m companion.app perceive \
 
 PYTHONPATH=src python3.11 -m companion.app plan \
   --state fixtures/table_states/direct_shot.json \
+  --game fixtures/game_contexts/solids.json \
   --output artifacts/shot_plan.json
 
 PYTHONPATH=src python3.11 -m companion.app render \

@@ -7,7 +7,9 @@ from companion.serialization import read_document, write_document
 
 from .geometry import Point2, Segment2, UnitVector2
 from .shot import CueAim, GuideRole, GuideSegment, ShotPlan
-from .table import Ball, BallType, CoverageStatus, Pocket, TableGeometry, TableState
+from .table import (
+    Ball, BallType, CoverageStatus, GameContext, PlayerGroup, Pocket, TableGeometry, TableState,
+)
 
 
 def geometry_from_dict(data: dict[str, Any]) -> TableGeometry:
@@ -36,6 +38,19 @@ def load_table_state(path: Path) -> TableState:
 
 def save_table_state(path: Path, state: TableState) -> None:
     write_document(path, "table_state", state)
+
+
+def load_game_context(path: Path) -> GameContext:
+    """Read operator-supplied game context; never infer group from ball counts."""
+    fields = read_document(path, "game_context")
+    if fields["player_group"] is not None:
+        fields["player_group"] = PlayerGroup(fields["player_group"])
+    return GameContext(**fields)
+
+
+def save_game_context(path: Path, game: GameContext) -> None:
+    """Save the current shooter's group and shot situation for an offline run."""
+    write_document(path, "game_context", game)
 
 
 def load_shot_plan(path: Path) -> ShotPlan:

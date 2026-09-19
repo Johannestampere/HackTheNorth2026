@@ -43,7 +43,11 @@ class PlanningReady:
 
 @dataclass(frozen=True)
 class InsufficientInformation:
-    """Explain what information the planner is missing before it can choose a shot."""
+    """Explain missing information or an unsupported MVP situation.
+
+    Examples: unknown group, incomplete layout, break shot, or cue ball awaiting
+    placement. The caller must resolve the situation, not display an old plan.
+    """
 
     reason: str
 

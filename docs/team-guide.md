@@ -57,7 +57,7 @@ The synthetic capture only exercises file loading; replace it with real recorded
 
 Entry point: `src/companion/pool/planning/service.py`, `PlanningService.plan()`.
 
-Input: physical table state and explicit practice/game context. Output: `PlanningReady(ShotPlan)` or an information/feasibility outcome. No image, camera, projector, or motor dependency is allowed.
+Input: physical table state and explicit 8-ball context for the current shooter. Output: `PlanningReady(ShotPlan)` or an information/feasibility outcome. No image, camera, projector, or motor dependency is allowed.
 
 Suggested internal split:
 
@@ -67,7 +67,7 @@ physics.py        Deterministic trajectory simulation behind a local interface
 scoring.py        Target success, scratch risk, difficulty, position
 ```
 
-V1: output one anchored cue direction plus a cue-alignment segment. V2: add cue/object-ball paths, ghost-ball position, target pocket, and optionally cue-ball speed. Keep the same `ShotPlan` boundary.
+The first display shows anchored cue direction; later add cue/object-ball paths and ghost-ball position. Every successful plan already requires cue-stick speed in m/s and called target ball/pocket. Each guide carries its ball ID. Keep the same `ShotPlan` boundary; display milestones are not JSON schema versions.
 
 Recommended first algorithm: direct no-spin shots. For object-ball position B, pocket position P, and radius r:
 
@@ -81,17 +81,18 @@ Check path clearance using ball radius, finite segments, and endpoint/contact ge
 
 Physics engines, ML, or RL can fit behind this interface. Analytic geometry plus a simple simulation is the suggested initial approach; no choice is mandated. “Best” means best among the evaluated candidates under the model. A confidence number would require uncertainty trials or evaluation, so the scaffold does not invent one.
 
-Acceptance evidence: direct unobstructed shot, blocked cue path, blocked target path, near-rail/degenerate shot, missing cue ball, unknown types, no feasible candidate, and selected-group targeting. Include repeatable outputs and simulated/real outcomes once a simulator exists.
+Acceptance evidence: direct unobstructed shot, blocked cue path, blocked target path, near-rail/degenerate shot, missing cue ball, unknown types, no feasible candidate, and assigned-group targeting, premature eight-ball rejection, and a legal eight-ball finish. Include repeatable outputs and simulated/real outcomes once a simulator exists.
 
 Run independently:
 
 ```sh
 PYTHONPATH=src python3.11 -m companion.app plan \
   --state fixtures/table_states/direct_shot.json \
+  --game fixtures/game_contexts/solids.json \
   --output artifacts/shot_plan.json
 ```
 
-Add `--group solids` or `--group stripes` for group-practice mode. Without it, the documented demo mode applies. Full eight-ball rules are future work.
+The required game file supplies `player_group`, `is_break`, and `ball_in_hand`. No default group is inferred. MVP: ordinary post-break shots with assigned groups and a placed cue ball. Other contexts return `InsufficientInformation`. Evaluate rack win/loss, scratches, called pots, and follow-up position; permit the eight only after the group is cleared. Do not optimize pot count alone. The schema does not implement the rules engine for you.
 
 ## Teammate 3: projection
 
@@ -109,7 +110,7 @@ renderer.py       Draw guidance, apply perspective, clip to table/raster
 First milestone:
 
 1. Load the synthetic plan/target and render a black-background pixel image.
-2. Support aim-only plans, styled guide roles, and an optional ghost-ball circle.
+2. Support aim-only plans, styled guide roles with explicit ball IDs, and an optional ghost-ball circle. Treat cue-stick speed as a separate physical quantity, never as vector length or an invented power percentage.
 3. Calibrate a fixed real projector pose using measured points/projected dots.
 4. Verify additional held-out projected points on the cloth.
 5. Project a known physical line at the intended mount distance and height.
