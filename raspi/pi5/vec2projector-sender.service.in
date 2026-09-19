@@ -1,0 +1,26 @@
+# Generated from vec2projector-sender.service.in by install.sh.
+#
+# YOUR sender. A separate unit on purpose: if it crashes, restarts, or is redeployed,
+# the projector keeps showing the last frame instead of going black.
+# Not enabled by default. Replace ExecStart with your own program (it only has to
+# POST to http://127.0.0.1:@PORT@ -- see sender.py), then:
+#   sudo systemctl enable --now vec2projector-sender
+
+[Unit]
+Description=vec2projector sender - pushes updates to the display
+After=vec2projector.service
+Wants=vec2projector.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=@USER@
+WorkingDirectory=@DIR@
+Environment=PYTHONUNBUFFERED=1
+Environment=VEC2PROJECTOR_URL=http://127.0.0.1:@PORT@
+ExecStart=/usr/bin/python3 @DIR@/sender.py clock
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
