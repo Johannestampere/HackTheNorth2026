@@ -46,6 +46,7 @@ available, writes frames straight into `/dev/fb0`. The line `output: ...` says w
 ```sh
 python3 sender.py clock                      # analog clock, sweeping second hand
 python3 sender.py spin                       # rotating star
+python3 sender.py random                     # endless random strokes
 python3 sender.py line 0 0 1 1 red 6         # one line, then exit
 python3 sender.py image photo.png
 python3 sender.py clear
