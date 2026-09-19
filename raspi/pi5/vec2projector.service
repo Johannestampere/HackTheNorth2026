@@ -1,0 +1,39 @@
+# /etc/systemd/system/vec2projector.service
+#
+# The DISPLAY process. It owns the HDMI output and must never exit.
+# It does not know or care whether your server is running.
+
+[Unit]
+Description=vec2projector - owns the HDMI output
+After=multi-user.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/vec2projector
+
+# kmsdrm needs these; tty ownership keeps SDL happy with no login session.
+SupplementaryGroups=video render input tty
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+TTYReset=yes
+TTYVHangup=yes
+
+Environment=SDL_VIDEODRIVER=kmsdrm
+Environment=PYTHONUNBUFFERED=1
+
+ExecStartPre=/usr/bin/setterm --term linux --blank 0 --powerdown 0 --cursor off </dev/tty1
+
+# Listens on loopback for frames pushed by the server. --no-stdin because
+# systemd gives us a tty, not a feed.
+ExecStart=/usr/bin/python3 /home/pi/vec2projector/vec2projector.py \
+    --display 0 --no-stdin --http 8080 --fit contain --quiet
+
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

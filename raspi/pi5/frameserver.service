@@ -1,0 +1,23 @@
+# /etc/systemd/system/frameserver.service
+#
+# YOUR server. Separate unit on purpose: if it crashes, restarts, or gets
+# redeployed, the projector keeps showing the last frame instead of going black.
+
+[Unit]
+Description=frame server - generates and pushes frames
+After=network-online.target vec2projector.service
+Wants=vec2projector.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/vec2projector
+Environment=PYTHONUNBUFFERED=1
+Environment=VEC2PROJECTOR_URL=http://127.0.0.1:8080
+ExecStart=/usr/bin/python3 /home/pi/vec2projector/server.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
