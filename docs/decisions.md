@@ -11,7 +11,7 @@
 - Perception turns oblique/multiple captures into ball `(x,y,type)` data.
 - Planning aims for eventual rack success. The first display produces cue alignment; later displays add predicted paths. A plan includes called ball/pocket and cue-stick speed from the start.
 - Projection turns physical vectors into perspective-correct projector pixels.
-- Initial planner: Pooltool 0.6.0, bounded direct-pot angle/speed search, and nominal follow-up position scoring. See [implementation](planning.md).
+- Initial planner: Pooltool 0.6.0, bounded direct-pot angle/speed search, sampled uncertainty utility, and bounded two-shot lookahead (maximum 933 default simulations). See [implementation](planning.md).
 
 ## Engineering defaults in this scaffold
 
@@ -41,7 +41,7 @@ These are concrete starting conventions, not claims about selected hardware or c
 | What is the measured physical table length? | Replace the explicit 2 m simulation assumption | Planning |
 | Markers/manual calibration acceptable for the demo? | Fast reliable setup versus automatic localization scope | Perception + projection |
 | Required localization/projection error and maximum latency? | Acceptance thresholds and feasible shots | Whole team |
-| What uncertainty model and deeper search should follow the nominal planner? | Real execution reliability and rack strategy | Planning |
+| How should assumed errors/utility weights be calibrated, and how deep should future search go? | Real execution reliability and rack strategy | Planning |
 | How does the operator supply the current group and confirm cue-ball placement? | Explicit game context for each planning request | Planning + integration |
 | Can the projector cover the cue guidance at all relevant locations? | Target pose selection and multi-region presentation | Projection |
 | Which teammate owns scanning/application integration? | Work that crosses the three stage boundaries | Whole team |

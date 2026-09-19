@@ -102,4 +102,4 @@ Generalization has a stub `run(first_capture)` entry point. Its result schema is
 4. Add multi-view capture/fusion and repeatable rotating projector poses.
 5. Add the LLM router, then audio and generalization.
 
-The planner uses Pooltool 0.6.0 for direct center-ball shot simulation and a bounded heuristic search. See [planning implementation](planning.md) for scoring and limits.
+The planner uses Pooltool 0.6.0 for direct center-ball shot simulation and a bounded heuristic search with seeded uncertainty trials. See [planning implementation](planning.md) for scoring and limits.

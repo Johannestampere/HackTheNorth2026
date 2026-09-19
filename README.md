@@ -6,7 +6,7 @@ The first tool is **pool**. The robot sits beside the table, some distance away 
 
 ## Current status
 
-The **pool planner now runs Pooltool simulations** to choose direct center-ball pots, evaluate basic shot legality, and output cue aim, speed, and predicted paths. A standalone 2D replay shows synthetic game runs. Perception, projection, LLM routing, and hardware control remain stubs. See the [planning guide](docs/planning.md) for setup, scoring, and limitations.
+The **pool planner now runs Pooltool simulations** to choose direct center-ball pots, evaluate basic shot legality, rank successes using sampled execution/position errors and bounded two-shot lookahead, and output cue aim, speed, and predicted paths. A standalone 2D replay shows synthetic game runs. Perception, projection, LLM routing, and hardware control remain stubs. See the [planning guide](docs/planning.md) for setup, scoring, and limitations.
 
 The fixtures are synthetic examples, not camera measurements or a validated shot recommendation. No model weights, camera SDK, LLM credentials, or hardware are required to start.
 
@@ -77,4 +77,4 @@ The planning command works after installing `.[planning]`; perception and projec
 PYTHONPATH=src .venv/bin/python -m companion.pool.planning.demo
 ```
 
-Open `artifacts/pool-game.html` to watch the generated game. It uses actual simulated trajectories, with play/pause and shot scrubbing. Unsupported direct-pot positions cause a clearly logged demo player switch; safeties and realistic execution errors are future work. See [details and short endgame command](docs/planning.md).
+Open `artifacts/pool-game.html` to watch the generated game. It uses actual simulated trajectories, with play/pause and shot scrubbing. Unsupported direct-pot positions cause a clearly logged demo player switch; safeties remain future work. Add `--execution-seed 23` to demonstrate assumed aim/speed errors and misses. See [details and short endgame command](docs/planning.md).
