@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "kind": "capture_batch",
+  "data": {
+    "batch_id": "synthetic-batch",
+    "captures": [
+      {
+        "capture_id": "synthetic-capture",
+        "captured_at_s": 1000.0,
+        "rgb_path": "synthetic.ppm",
+        "calibration_id": "synthetic-no-camera-calibration",
+        "view_id": "synthetic-top-down"
+      }
+    ]
+  }
+}

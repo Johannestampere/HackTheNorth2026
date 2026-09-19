@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "kind": "table_geometry",
+  "data": {
+    "table_id": "synthetic-table-v1",
+    "length_m": 2.0,
+    "width_m": 1.0,
+    "ball_radius_m": 0.028575,
+    "pockets": [
+      {
+        "id": "x0-y0",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "mouth_width_m": 0.12
+      },
+      {
+        "id": "mid-y0",
+        "position": {
+          "x": 1,
+          "y": 0
+        },
+        "mouth_width_m": 0.12
+      },
+      {
+        "id": "xmax-y0",
+        "position": {
+          "x": 2,
+          "y": 0
+        },
+        "mouth_width_m": 0.12
+      },
+      {
+        "id": "x0-ymax",
+        "position": {
+          "x": 0,
+          "y": 1
+        },
+        "mouth_width_m": 0.12
+      },
+      {
+        "id": "mid-ymax",
+        "position": {
+          "x": 1,
+          "y": 1
+        },
+        "mouth_width_m": 0.12
+      },
+      {
+        "id": "xmax-ymax",
+        "position": {
+          "x": 2,
+          "y": 1
+        },
+        "mouth_width_m": 0.12
+      }
+    ]
+  }
+}

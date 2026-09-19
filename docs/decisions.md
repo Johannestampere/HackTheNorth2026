@@ -1,0 +1,49 @@
+# Decisions and open questions
+
+## Product decisions from the discussion
+
+- A general physical AI companion selects useful tools and projects onto the environment.
+- The sensor is an RGB camera. A model estimates depth from RGB inside perception; there is no depth camera. Audio comes later.
+- The robot is beside the pool table, at a distance and approximately 1–2 m high, on a 360° rotating base. The earlier overhead setup is superseded.
+- A general multimodal LLM inspects the initial image and chooses pool or generalization.
+- Pool is implemented first. Generalization remains a separate future module.
+- Three teammates own perception, planning, and projection respectively.
+- Perception turns oblique/multiple captures into ball `(x,y,type)` data.
+- Planning v1 produces cue alignment; v2 adds predicted paths and related shot guidance.
+- Projection turns physical vectors into perspective-correct projector pixels.
+- The planner's implementation may use physics, ML, or RL; no algorithm/library was mandated.
+
+## Engineering defaults in this scaffold
+
+These are concrete starting conventions, not claims about selected hardware or completed algorithms:
+
+- Python 3.11+, a standard-library-only shared core, immutable dataclasses, structural protocols, and constructor-based dependency injection.
+- Meters in a fixed table frame; pixels confined to acquisition/rendering boundaries.
+- Known/measured table geometry provided to perception instead of requiring automatic geometry estimation in v1.
+- File-backed camera manifests and versioned JSON fixtures for independent development.
+- RGB-only capture contract; estimated depth stays internal to perception.
+- Explicit partial/unusable/no-shot outcomes instead of fake successful results.
+- Observation/table/calibration/pose IDs to catch inconsistent handoffs.
+- Demo and selected-group practice modes, not a complete eight-ball rules engine.
+- RGB8 byte frames with PPM export for dependency-free inspection.
+- A fixed-pose homography target first; rotating target selection and scan orchestration remain future application work.
+- No automatic model downloads, LLM calls, hardware commands, commits, or pushes.
+
+## Still to decide with the team
+
+| Question | Why it matters | Owner(s) |
+| --- | --- | --- |
+| Which RGB camera and depth-estimation model? | Image resolution, model accuracy/scale, inference latency | Perception |
+| Are cameras and projector rigidly mounted to the same rotating assembly? | Extrinsics and pose calibration | Perception + projection |
+| Does 1–2 m height mean above floor or cloth, and what is table distance? | Occlusion, effective resolution, projector throw | Whole team |
+| Is pitch adjustable, and how repeatable is the base? | Whether the table can be reached and alignment retained | Hardware + projection |
+| Which table/balls/pocket dimensions? | Coordinate frame, collision radii, calibration | Whole team |
+| Markers/manual calibration acceptable for the demo? | Fast reliable setup versus automatic localization scope | Perception + projection |
+| Required localization/projection error and maximum latency? | Acceptance thresholds and feasible shots | Whole team |
+| What is the initial solver and scoring objective? | Physics fidelity, search cost, implementation effort | Planning |
+| Demo targeting or selected-group practice at presentation time? | Operator input and candidate filtering | Planning + integration |
+| Can the projector cover the cue guidance at all relevant locations? | Target pose selection and multi-region presentation | Projection |
+| Which teammate owns scanning/application integration? | Work that crosses the three stage boundaries | Whole team |
+| Which LLM/provider and routing behavior on uncertainty? | Future tool router implementation | Integration |
+
+Do not block fixture-based work on these answers. Do resolve physical setup and calibration questions before claiming hardware accuracy or a complete observable table state.

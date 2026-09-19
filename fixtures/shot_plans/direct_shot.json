@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "kind": "shot_plan",
+  "data": {
+    "observation_id": "synthetic-observation-001",
+    "table_id": "synthetic-table-v1",
+    "cue_aim": {
+      "cue_ball_id": "cue",
+      "origin": {
+        "x": 0.6,
+        "y": 0.3
+      },
+      "direction": {
+        "x": 0.8944271909999159,
+        "y": 0.4472135954999579
+      }
+    },
+    "guides": [
+      {
+        "role": "cue_alignment",
+        "segment": {
+          "start": {
+            "x": 0.28695048315002947,
+            "y": 0.14347524157501473
+          },
+          "end": {
+            "x": 0.5744417430171774,
+            "y": 0.2872208715085887
+          }
+        }
+      },
+      {
+        "role": "cue_ball_before_contact",
+        "segment": {
+          "start": {
+            "x": 0.6,
+            "y": 0.3
+          },
+          "end": {
+            "x": 1.1488834860343549,
+            "y": 0.5744417430171774
+          }
+        }
+      },
+      {
+        "role": "object_ball_path",
+        "segment": {
+          "start": {
+            "x": 1.2,
+            "y": 0.6
+          },
+          "end": {
+            "x": 2,
+            "y": 1
+          }
+        }
+      }
+    ],
+    "ghost_ball": {
+      "x": 1.1488834860343549,
+      "y": 0.5744417430171774
+    },
+    "target_ball_id": "solid-1",
+    "target_pocket_id": "xmax-ymax",
+    "suggested_cue_ball_speed_mps": null
+  }
+}
