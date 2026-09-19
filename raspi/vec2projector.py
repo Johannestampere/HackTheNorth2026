@@ -970,8 +970,9 @@ def diagnose():
     if not seen:
         bad("no DRM connectors found", "is the KMS driver enabled? (dtoverlay=vc4-kms-v3d)")
     elif not any(rd(x) == "connected" for x in glob.glob("/sys/class/drm/card*-HDMI*/status")):
-        warn("no HDMI connector is 'connected': projector off, wrong port, or no EDID at boot. "
-             "See SETUP-pi5.md section 3 (video=HDMI-A-1:1920x1080M@60D).")
+        bad("no HDMI connector is 'connected' -- the Pi cannot see the projector",
+            "power the projector on, select its HDMI input, reseat the cable (try the other port), "
+            "then reboot with it on; see SETUP-pi5.md section 3 if it only fails on a cold start")
 
     print("\n4. device access")
     for node in sorted(glob.glob("/dev/dri/card*")):
