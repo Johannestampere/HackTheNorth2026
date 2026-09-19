@@ -23,64 +23,71 @@ class CoverageStatus(str, Enum):
 
 @dataclass(frozen=True)
 class Ball:
-    """One observed ball: ID, center position in table meters, and classified type.
+    """One observed ball: ID, center position in table-length units, and classified type.
 
     Optional confidence describes the type prediction; optional uncertainty is
-    position error in meters. None means unavailable, not perfect certainty.
+    position error in table-length units. None means unavailable, not perfect certainty.
     """
 
     id: str
     position: Point2
     type: BallType
     type_confidence: float | None = None
-    position_uncertainty_m: float | None = None
+    position_uncertainty: float | None = None
 
     def __post_init__(self) -> None:
         if not self.id or not isinstance(self.type, BallType):
             raise ValueError("A ball needs an ID and a BallType enum")
         if self.type_confidence is not None and not 0 <= self.type_confidence <= 1:
             raise ValueError("Type confidence must be in [0, 1]")
-        if self.position_uncertainty_m is not None and (
-            not isfinite(self.position_uncertainty_m) or self.position_uncertainty_m < 0
+        if self.position_uncertainty is not None and (
+            not isfinite(self.position_uncertainty) or self.position_uncertainty < 0
         ):
             raise ValueError("Position uncertainty must be finite and nonnegative")
 
 
 @dataclass(frozen=True)
 class Pocket:
-    """A target pocket's ID, mouth-center position, and mouth width in meters."""
+    """Pocket ID, mouth-center position, and mouth width in table-length units."""
 
     id: str
     position: Point2
-    mouth_width_m: float
+    mouth_width: float
 
     def __post_init__(self) -> None:
-        if not self.id or not isfinite(self.mouth_width_m) or self.mouth_width_m <= 0:
+        if not self.id or not isfinite(self.mouth_width) or self.mouth_width <= 0:
             raise ValueError("A pocket needs an ID and positive finite mouth width")
 
 
 @dataclass(frozen=True)
 class TableGeometry:
-    """Measured playing-surface dimensions, ball radius, and six pocket locations.
+    """Playing-surface proportions, ball radius, and six pocket locations.
 
-    All lengths are meters. ``table_id`` also identifies the fixed origin and
-    axes, so every stage interprets positions in the same coordinate frame.
+    ``length`` must be 1.0. ``width`` is short side / long side, not independently
+    normalized to 1. ``ball_radius`` and pocket widths use that same long-side
+    unit. No physical measurement in meters is required by this contract.
+    Origin is top-left in the agreed top-down view, +x right and +y down.
+    ``table_id`` identifies this fixed frame for every capture/projector pose.
     """
 
     table_id: str
-    length_m: float
-    width_m: float
-    ball_radius_m: float
+    length: float
+    width: float
+    ball_radius: float
     pockets: tuple[Pocket, ...]
 
     def __post_init__(self) -> None:
         if not self.table_id:
             raise ValueError("table_id identifies the table AND its coordinate frame")
         if not all(isfinite(v) and v > 0 for v in (
-            self.length_m, self.width_m, self.ball_radius_m
+            self.length, self.width, self.ball_radius
         )):
             raise ValueError("Table dimensions and ball radius must be positive and finite")
-        if 2 * self.ball_radius_m >= min(self.length_m, self.width_m):
+        # Both axes use ONE scale. Scaling x and y separately would distort
+        # distances, ball radii, and the angles used by the shot planner.
+        if self.length != 1.0 or self.width > 1.0:
+            raise ValueError("Table length must be 1.0 and width must be in (0, 1]")
+        if 2 * self.ball_radius >= min(self.length, self.width):
             raise ValueError("Ball diameter must be smaller than the playing surface")
         if len(self.pockets) != 6 or len({p.id for p in self.pockets}) != 6:
             raise ValueError("The current pool contract requires six uniquely identified pockets")
@@ -115,8 +122,8 @@ class TableState:
         if sum(ball.type is BallType.EIGHT for ball in self.balls) > 1:
             raise ValueError("An observation cannot contain multiple eight balls")
         for ball in self.balls:
-            if not (0 <= ball.position.x <= self.geometry.length_m
-                    and 0 <= ball.position.y <= self.geometry.width_m):
+            if not (0 <= ball.position.x <= self.geometry.length
+                    and 0 <= ball.position.y <= self.geometry.width):
                 raise ValueError(f"Ball {ball.id} is outside the playing surface")
 
 

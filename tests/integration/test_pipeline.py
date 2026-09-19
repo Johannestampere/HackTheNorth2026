@@ -84,7 +84,7 @@ class PipelineTests(unittest.TestCase):
                 self.renderer.render.assert_not_called()
 
     def test_projector_target_must_match_full_table_geometry(self):
-        self.target = replace(self.target, geometry=replace(self.target.geometry, length_m=3))
+        self.target = replace(self.target, geometry=replace(self.target.geometry, width=0.6))
         with self.assertRaises(ValueError):
             self.prepare()
         self.perception.estimate.assert_not_called()

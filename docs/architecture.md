@@ -17,9 +17,9 @@ flowchart TD
     Router --> General[Generalization tool: future work]
     Pool --> Captures[One or more calibrated captures]
     Captures --> Perception[1. Perception]
-    Perception --> State[TableState in meters]
+    Perception --> State[TableState in table-length units]
     State --> Planner[2. Shot planning]
-    Planner --> Plan[ShotPlan in meters]
+    Planner --> Plan[ShotPlan in table-length units]
     Plan --> Renderer[3. Projection renderer]
     Calibration[Projector target calibration] --> Renderer
     Renderer --> Frame[RGB pixel frame]

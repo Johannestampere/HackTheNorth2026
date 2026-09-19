@@ -20,7 +20,7 @@ class GuideRole(str, Enum):
 class CueAim:
     """Anchor a forward unit strike direction at the observed cue-ball center.
 
-    ``origin`` is copied from the ball's position in table meters; ``cue_ball_id``
+    ``origin`` is copied from the ball's position in table-length units; ``cue_ball_id``
     identifies that ball. Direction describes aim, not power or speed.
     """
 
@@ -35,7 +35,7 @@ class CueAim:
 
 @dataclass(frozen=True)
 class GuideSegment:
-    """One drawable segment in table meters, associated with an observed ball.
+    """One drawable segment in table-length units, associated with an observed ball.
 
     ``ball_id`` identifies the moving ball for a trajectory. For CUE_ALIGNMENT
     it identifies the cue ball being aimed at; the segment lies behind that ball
@@ -60,15 +60,17 @@ class ShotPlan:
     """One recommended pot attempt, chosen to improve the shooter's rack outcome.
 
     ``cue_aim`` anchors a forward UNIT direction at the observed cue-ball center.
-    ``cue_stick_speed_mps`` is the cue tip's linear speed immediately before
-    impact, in m/s: NOT initial cue-ball speed and NOT a unitless power percentage.
+    ``cue_stick_speed`` is the cue tip's linear speed immediately before
+    impact, in TABLE LENGTHS PER SECOND: not m/s, initial cue-ball speed, or a
+    unitless power percentage. A metric simulator must supply its own measured
+    or explicitly assumed physical scale and convert at its boundary.
     The MVP assumes a level, center-ball strike (no intentional tip offset).
     Physics may generate spin after impact; those assumptions do not mean balls
     never spin. Predicted paths are conditional on this strike and the model.
 
     ``target_ball_id`` and ``target_pocket_id`` identify the intended called pot,
     including the eight ball when legal. The MVP does not encode safety shots.
-    ``guides`` are optional nominal predicted paths/alignment in table meters;
+    ``guides`` are optional nominal predicted paths/alignment in table-length units;
     an empty tuple means display aim only, not that nothing moves. ``ghost_ball``
     is an optional cue-ball center at first contact for a direct shot.
 
@@ -80,7 +82,7 @@ class ShotPlan:
     observation_id: str
     table_id: str
     cue_aim: CueAim
-    cue_stick_speed_mps: float
+    cue_stick_speed: float
     target_ball_id: str
     target_pocket_id: str
     guides: tuple[GuideSegment, ...] = ()
@@ -93,5 +95,5 @@ class ShotPlan:
             raise ValueError("A pot attempt must identify its called ball and pocket")
         # Keep strike speed separate from direction so renderers never treat
         # vector length as power or confuse cue-stick speed with cue-ball speed.
-        if not isfinite(self.cue_stick_speed_mps) or self.cue_stick_speed_mps <= 0:
+        if not isfinite(self.cue_stick_speed) or self.cue_stick_speed <= 0:
             raise ValueError("Cue-stick speed must be positive and finite")

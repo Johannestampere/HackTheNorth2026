@@ -1,63 +1,63 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "kind": "table_state",
   "data": {
     "observation_id": "synthetic-observation-001",
     "capture_started_at_s": 1000.0,
     "capture_ended_at_s": 1000.0,
     "geometry": {
-      "table_id": "synthetic-table-v1",
-      "length_m": 2.0,
-      "width_m": 1.0,
-      "ball_radius_m": 0.028575,
+      "table_id": "synthetic-table-normalized-v3",
+      "length": 1.0,
+      "width": 0.5,
+      "ball_radius": 0.0142875,
       "pockets": [
         {
           "id": "x0-y0",
           "position": {
-            "x": 0,
-            "y": 0
+            "x": 0.0,
+            "y": 0.0
           },
-          "mouth_width_m": 0.12
+          "mouth_width": 0.06
         },
         {
           "id": "mid-y0",
           "position": {
-            "x": 1,
-            "y": 0
+            "x": 0.5,
+            "y": 0.0
           },
-          "mouth_width_m": 0.12
+          "mouth_width": 0.06
         },
         {
           "id": "xmax-y0",
           "position": {
-            "x": 2,
-            "y": 0
+            "x": 1.0,
+            "y": 0.0
           },
-          "mouth_width_m": 0.12
+          "mouth_width": 0.06
         },
         {
           "id": "x0-ymax",
           "position": {
-            "x": 0,
-            "y": 1
+            "x": 0.0,
+            "y": 0.5
           },
-          "mouth_width_m": 0.12
+          "mouth_width": 0.06
         },
         {
           "id": "mid-ymax",
           "position": {
-            "x": 1,
-            "y": 1
+            "x": 0.5,
+            "y": 0.5
           },
-          "mouth_width_m": 0.12
+          "mouth_width": 0.06
         },
         {
           "id": "xmax-ymax",
           "position": {
-            "x": 2,
-            "y": 1
+            "x": 1.0,
+            "y": 0.5
           },
-          "mouth_width_m": 0.12
+          "mouth_width": 0.06
         }
       ]
     },
@@ -65,42 +65,42 @@
       {
         "id": "cue",
         "position": {
-          "x": 0.6,
-          "y": 0.3
+          "x": 0.3,
+          "y": 0.15
         },
         "type": "cue",
         "type_confidence": null,
-        "position_uncertainty_m": null
+        "position_uncertainty": null
       },
       {
         "id": "solid-1",
         "position": {
-          "x": 1.2,
-          "y": 0.6
+          "x": 0.6,
+          "y": 0.3
         },
         "type": "solid",
         "type_confidence": null,
-        "position_uncertainty_m": null
+        "position_uncertainty": null
       },
       {
         "id": "stripe-1",
         "position": {
-          "x": 1.5,
-          "y": 0.2
+          "x": 0.75,
+          "y": 0.1
         },
         "type": "stripe",
         "type_confidence": null,
-        "position_uncertainty_m": null
+        "position_uncertainty": null
       },
       {
         "id": "eight",
         "position": {
-          "x": 0.9,
-          "y": 0.8
+          "x": 0.45,
+          "y": 0.4
         },
         "type": "eight",
         "type_confidence": null,
-        "position_uncertainty_m": null
+        "position_uncertainty": null
       }
     ],
     "coverage": "complete"

@@ -1,14 +1,14 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "kind": "shot_plan",
   "data": {
     "observation_id": "synthetic-eight-finish-001",
-    "table_id": "synthetic-table-v1",
+    "table_id": "synthetic-table-normalized-v3",
     "cue_aim": {
       "cue_ball_id": "cue",
       "origin": {
-        "x": 0.6,
-        "y": 0.3
+        "x": 0.3,
+        "y": 0.15
       },
       "direction": {
         "x": 0.8944271909999159,
@@ -20,8 +20,22 @@
         "role": "cue_alignment",
         "segment": {
           "start": {
-            "x": 0.28695048315002947,
-            "y": 0.14347524157501473
+            "x": 0.14347524157501473,
+            "y": 0.07173762078750737
+          },
+          "end": {
+            "x": 0.2872208715085887,
+            "y": 0.14361043575429436
+          }
+        },
+        "ball_id": "cue"
+      },
+      {
+        "role": "cue_ball_before_contact",
+        "segment": {
+          "start": {
+            "x": 0.3,
+            "y": 0.15
           },
           "end": {
             "x": 0.5744417430171774,
@@ -31,40 +45,26 @@
         "ball_id": "cue"
       },
       {
-        "role": "cue_ball_before_contact",
+        "role": "object_ball_path",
         "segment": {
           "start": {
             "x": 0.6,
             "y": 0.3
           },
           "end": {
-            "x": 1.1488834860343549,
-            "y": 0.5744417430171774
-          }
-        },
-        "ball_id": "cue"
-      },
-      {
-        "role": "object_ball_path",
-        "segment": {
-          "start": {
-            "x": 1.2,
-            "y": 0.6
-          },
-          "end": {
-            "x": 2,
-            "y": 1
+            "x": 1.0,
+            "y": 0.5
           }
         },
         "ball_id": "eight"
       }
     ],
     "ghost_ball": {
-      "x": 1.1488834860343549,
-      "y": 0.5744417430171774
+      "x": 0.5744417430171774,
+      "y": 0.2872208715085887
     },
     "target_ball_id": "eight",
     "target_pocket_id": "xmax-ymax",
-    "cue_stick_speed_mps": 1.5
+    "cue_stick_speed": 0.75
   }
 }

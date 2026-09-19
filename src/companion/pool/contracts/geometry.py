@@ -1,4 +1,4 @@
-"""Immutable geometry in meters in the shared table coordinate frame."""
+"""2D geometry in table-length units: the long side is 1, origin at top-left."""
 
 from dataclasses import dataclass
 from math import hypot, isclose, isfinite
@@ -8,8 +8,10 @@ from math import hypot, isclose, isfinite
 class Point2:
     """A position in two dimensions; the ``2`` means x and y, not a version.
 
-    Both coordinates are meters in the shared table frame: x along its length,
-    y along its width. For example, Point2(0.6, 0.3) locates a ball on the table.
+    One unit is the playing surface's long-side length. In the agreed top-down
+    view, (0, 0) is top-left, +x runs right along the long side, and +y runs down
+    along the short side. For a 2:1 table, the bottom-right is Point2(1, 0.5),
+    NOT Point2(1, 1). These are table coordinates, not raw camera pixels.
     """
 
     x: float
@@ -43,7 +45,7 @@ class UnitVector2:
 class Segment2:
     """A finite line in two dimensions, from ``start`` to ``end``.
 
-    The ``2`` means both endpoints are Point2 positions in table meters.
+    The ``2`` means both endpoints are Point2 positions in table-length units.
     Used for cue alignment and predicted ball paths; endpoints must differ.
     """
 

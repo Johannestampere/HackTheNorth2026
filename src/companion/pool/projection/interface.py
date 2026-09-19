@@ -10,8 +10,9 @@ class ShotRenderer(Protocol):
         """Render the supplied plan at its calibrated pose; do not move hardware.
 
         cue_aim is the authoritative alignment even when guides is empty. Guide
-        coordinates are ball-center paths in meters, associated by ball_id.
-        cue_stick_speed_mps is cue-tip speed, not ball speed or a power percent;
-        keep it separate from line length. Do not invent omitted trajectories.
+        coordinates are ball-center paths in table-length units, associated by ball_id.
+        cue_stick_speed is cue-tip speed in table lengths/second, not ball speed
+        or a power percent; keep it separate from line length. Do not invent
+        omitted trajectories.
         """
         ...

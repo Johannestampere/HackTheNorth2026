@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from dataclasses import replace
+from math import hypot
 from pathlib import Path
 
 from companion.pool.contracts import (
@@ -36,7 +37,7 @@ class ContractTests(unittest.TestCase):
     def test_aim_only_plan_requires_strike_and_call_but_not_paths(self):
         data = json.loads((FIXTURES / "shot_plans/aim_only.json").read_text())
         data["data"] = {key: data["data"][key] for key in (
-            "observation_id", "table_id", "cue_aim", "cue_stick_speed_mps",
+            "observation_id", "table_id", "cue_aim", "cue_stick_speed",
             "target_ball_id", "target_pocket_id",
         )}
         with tempfile.TemporaryDirectory() as directory:
@@ -96,21 +97,53 @@ class ContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             GameContext(PlayerGroup.SOLIDS, ball_in_hand="false")
 
-    def test_schema_one_is_rejected_instead_of_reinterpreting_speed(self):
+    def test_old_schemas_are_rejected_instead_of_reinterpreting_units(self):
         document = json.loads((FIXTURES / "shot_plans/direct_shot.json").read_text())
-        document["schema_version"] = 1
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "old-plan.json"
-            path.write_text(json.dumps(document))
-            with self.assertRaisesRegex(ValueError, "Unsupported schema"):
-                load_shot_plan(path)
+            for version in (1, 2):
+                with self.subTest(version=version):
+                    document["schema_version"] = version
+                    path.write_text(json.dumps(document))
+                    with self.assertRaisesRegex(ValueError, "Unsupported schema"):
+                        load_shot_plan(path)
+
+    def test_table_uses_one_long_side_unit_for_both_axes(self):
+        geometry = self.state.geometry
+        self.assertEqual((geometry.length, geometry.width), (1.0, 0.5))
+        self.assertEqual(geometry.ball_radius, 0.0142875)
+        for changes in ({"length": 2}, {"width": 1.1}):
+            with self.subTest(changes=changes), self.assertRaises(ValueError):
+                replace(geometry, **changes)
+        # y=0.75 is outside a 2:1 table; y is not separately scaled to [0, 1].
+        with self.assertRaisesRegex(ValueError, "outside"):
+            replace(self.state, balls=(replace(self.state.balls[0], position=Point2(0.5, 0.75)),))
+
+    def test_normalization_preserves_ghost_contact_and_aim_direction(self):
+        ball = next(ball for ball in self.state.balls if ball.id == self.plan.target_ball_id)
+        ghost = self.plan.ghost_ball
+        self.assertIsNotNone(ghost)
+        self.assertAlmostEqual(hypot(ball.position.x - ghost.x, ball.position.y - ghost.y),
+                               2 * self.state.geometry.ball_radius)
+        cue = self.plan.cue_aim.origin
+        distance = hypot(ghost.x - cue.x, ghost.y - cue.y)
+        self.assertAlmostEqual((ghost.x - cue.x) / distance, self.plan.cue_aim.direction.x)
+        self.assertAlmostEqual((ghost.y - cue.y) / distance, self.plan.cue_aim.direction.y)
+        self.assertEqual(self.plan.cue_stick_speed, 0.75)
+
+    def test_normalized_projector_calibration_preserves_pixel_locations(self):
+        target = load_projection_target(FIXTURES / "projection_targets/synthetic.json")
+        point = (0.5, 0.25, 1)  # Physical center: previously (1, 0.5) in the fixture.
+        a, b, c = [sum(v * p for v, p in zip(row, point)) for row in target.table_to_pixel]
+        self.assertAlmostEqual(a / c, 340 / 1.06)
+        self.assertAlmostEqual(b / c, 160 / 1.06)
 
     def test_strike_speed_must_be_explicit_positive_and_finite(self):
         for speed in (0, -1, float("inf"), float("nan")):
             with self.subTest(speed=speed), self.assertRaises(ValueError):
-                replace(self.plan, cue_stick_speed_mps=speed)
+                replace(self.plan, cue_stick_speed=speed)
         document = json.loads((FIXTURES / "shot_plans/direct_shot.json").read_text())
-        del document["data"]["cue_stick_speed_mps"]
+        del document["data"]["cue_stick_speed"]
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "missing-speed.json"
             path.write_text(json.dumps(document))

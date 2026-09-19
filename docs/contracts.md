@@ -1,18 +1,20 @@
-# Shared contracts: schema version 2
+# Shared contracts: schema version 3
 
 Source under `src/companion/pool/contracts/` is authoritative for field names and enum values. This document defines their meaning. Changes to stage boundaries require team agreement and updated fixtures.
 
 ## Coordinates and identity
 
-- All table positions/distances use **meters**; cue-stick strike speed uses meters/second.
-- Origin is a physically marked corner of the playing surface, not the outside of the rails. +x follows its long edge; +y follows its short edge. +z points above the cloth. Mark and photograph the axes before calibrating.
-- The cloth is `z=0`; the playing rectangle is `[0, length_m] × [0, width_m]`.
-- A ball's position is the physical sphere center's `(x,y)`, vertically projected onto the cloth. The actual center is at `z=ball_radius_m`. It is not an image bounding-box center.
-- `UnitVector2` is dimensionless and must have length 1 within `1e-6`. It is not a velocity.
-- Cue direction points **forward into the intended shot** from the cue-ball center.
-- Pixel origin is upper-left, pixel x increases right, and pixel y increases down. Table y must not be inferred from image y.
-- `table_id` identifies the geometry AND its fixed coordinate frame. Changing physical origin/axes requires a new ID.
-- Times are Unix seconds on a common clock. A fused observation records the first and last acquisition times.
+- One **table-length unit** is the long side of the playing surface. `length` is always **1.0**.
+- `width = short_side / long_side`. Both axes use the same scale; do **not** independently map the short side to 1.
+- Origin is the **top-left playing-surface corner in one agreed top-down view**. +x runs right along the long side; +y runs down along the short side. This fixed corner does not change when the camera rotates.
+- For a 2:1 table: top-left `(0,0)`, top-right `(1,0)`, bottom-left `(0,0.5)`, bottom-right `(1,0.5)`.
+- Ball radius, pocket mouth widths, position uncertainty, ghost-ball positions, and all line endpoints use the same table-length unit.
+- The cloth is `z=0`; a ball center is at `z=ball_radius` if a 3D calculation is needed internally. Its exported `(x,y)` is its physical center vertically projected onto the cloth, not an image bounding-box center.
+- `UnitVector2` is dimensionless and must have length 1 within `1e-6`. Uniform normalization does not change aim angles. Cue direction points forward into the shot.
+- `cue_stick_speed` is in **table lengths per second**, separate from direction. It is not m/s or a power percentage.
+- Pixel origin is upper-left, x right and y down, but pixel positions still require a perspective transform into table coordinates. Do not divide slanted image x/y by separate bounding-box dimensions.
+- `table_id` identifies the geometry and fixed coordinate frame. Changing origin/axes or unit interpretation requires a new ID and matching calibration.
+- Times remain Unix seconds on a common clock. A fused observation records first and last acquisition times.
 
 The `2` in `Point2`, `UnitVector2`, and `Segment2` means **two-dimensional (x and y)**, not a version number. `Point2(x,y)` is a position, `UnitVector2(x,y)` is a unit direction, and `Segment2(start,end)` is a finite line between two positions. These are immutable dataclasses. Coordinates must be finite; segments must have nonzero length. Boundaries use tuples rather than mutable lists.
 
@@ -30,11 +32,11 @@ The `2` in `Point2`, `UnitVector2`, and `Segment2` means **two-dimensional (x an
 
 `CaptureBatch(batch_id, captures)` contains at least one capture. The loader resolves image paths against the JSON manifest's directory. Camera matrices are not embedded in the manifest: teammate 1 owns calibration artifacts and their resolver. An in-memory camera adapter may be added later without changing downstream pool contracts.
 
-The input is RGB only. Perception runs a depth-estimation model internally; its depth map is not a shared input or output contract. Document the model's output units/scale and how estimates are converted to table meters using known geometry. A batch's ordering does not establish that balls stayed stationary.
+The input is RGB only. Perception runs a depth-estimation model internally; its depth map is not a shared input or output contract. Document the model's output units/scale and how estimates are converted to table-length units using the table proportions. A batch's ordering does not establish that balls stayed stationary.
 
 ## Perception → planning
 
-`TableGeometry` contains `table_id`, `length_m`, `width_m`, `ball_radius_m`, and six `Pocket` objects. Each pocket has unique `id`, nominal mouth-center `position`, and `mouth_width_m`. Precise cushion-jaw/pocket acceptance geometry may need a future extension. The sample dimensions are not measurements of the real table.
+`TableGeometry` contains `table_id`, `length`, `width`, `ball_radius`, and six `Pocket` objects. Each pocket has unique `id`, nominal mouth-center `position`, and `mouth_width`. Precise cushion-jaw/pocket acceptance geometry may need a future extension. The sample dimensions are not measurements of the real table.
 
 `TableState` contains:
 
@@ -46,11 +48,11 @@ The input is RGB only. Perception runs a depth-estimation model internally; its 
 | `balls` | Tuple of observed `Ball` objects |
 | `coverage` | `complete`, `partial`, or `unknown` |
 
-`Ball` fields are `id`, `position: Point2`, `type: BallType`, optional `type_confidence`, and optional `position_uncertainty_m`.
+`Ball` fields are `id`, `position: Point2`, `type: BallType`, optional `type_confidence`, and optional `position_uncertainty`.
 
 Types are **`cue`, `solid`, `stripe`, `eight`, `unknown`**. IDs distinguish balls of the same type and stay stable during batch fusion; persistence across separate shots is not required in v1. Pocketed balls are absent, not placed at `(0,0)`. A partial state may lack a cue ball. Multiple cue or eight balls, duplicate IDs, and positions outside the playing rectangle are rejected.
 
-Type confidence is in `[0,1]`. Position uncertainty is a conservative radial error estimate in meters whose estimation method perception must document. Missing values mean unavailable, not perfect certainty. Neither field is a shot-success probability. Overlapping balls and other physically questionable estimates must be handled by stage logic, not silently corrected by serialization.
+Type confidence is in `[0,1]`. Position uncertainty is a conservative radial error estimate in table-length units whose estimation method perception must document. Missing values mean unavailable, not perfect certainty. Neither field is a shot-success probability. Overlapping balls and other physically questionable estimates must be handled by stage logic, not silently corrected by serialization.
 
 Coverage is complete only when no unresolved unobserved/occluded region may conceal another ball. Seeing the table outline is insufficient. Expected outcomes:
 
@@ -93,7 +95,7 @@ Planning must evaluate first contact, scratches/fouls, the intended called pocke
 | `ghost_ball` | Optional | Cue-ball center at first object-ball contact |
 | `target_ball_id` | Yes | Observed object ball for the intended called pot, including a legal eight-ball attempt |
 | `target_pocket_id` | Yes | Intended called pocket from table geometry |
-| `cue_stick_speed_mps` | Yes | Positive cue-tip speed immediately before impact, in m/s; not initial cue-ball speed |
+| `cue_stick_speed` | Yes | Positive cue-tip speed immediately before impact, in table lengths/second; not initial cue-ball speed |
 
 **Strike assumption:** level, center-ball hit, with no intentional tip offset. The direction is unit length and contains no power information. Even an aim-only display needs an explicit planned speed: later motion depends on it. The simulator adapter must not substitute initial cue-ball speed for cue-stick speed. A UI may show the physical speed or a separately calibrated strength label; the renderer must not invent a percentage. Spin/elevation controls are outside the current contract.
 
@@ -123,7 +125,7 @@ Outcomes: `PlanningReady(plan)`, `InsufficientInformation(reason)`, or `NoFeasib
 `ProjectionTarget` has `geometry: TableGeometry`, `calibration_id`, `pose_id`, `width_px`, `height_px`, and `table_to_pixel`, a finite invertible 3×3 homography. Its `table_id` property delegates to `geometry.table_id`.
 
 ```text
-[a,b,c] = H × [x_m,y_m,1]
+[a,b,c] = H × [x,y,1]
 u_px = a/c
 v_px = b/c
 ```
@@ -140,17 +142,17 @@ All JSON files have the same envelope:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "kind": "shot_plan",
   "data": {
     "observation_id": "example-observation",
     "table_id": "example-table",
     "cue_aim": {
       "cue_ball_id": "cue",
-      "origin": {"x": 0.6, "y": 0.3},
+      "origin": {"x": 0.3, "y": 0.15},
       "direction": {"x": 1.0, "y": 0.0}
     },
-    "cue_stick_speed_mps": 1.5,
+    "cue_stick_speed": 0.75,
     "target_ball_id": "solid-1",
     "target_pocket_id": "xmax-ymax"
   }
@@ -163,14 +165,28 @@ Expected result variants are in-process dataclasses. CLI success writes a state/
 
 Breaking schema changes require agreement, a version update, and fixture/test updates. Stage-internal experiments do not need to change shared types.
 
-## Migrating from schema 1
+## Physical simulation scale
 
-- Every JSON envelope now uses version **2**; version 1 is rejected. The camera/table/target payload shapes are otherwise unchanged.
-- Remove `GameMode` and its practice defaults. Construct `GameContext(player_group=...)` explicitly, or use `load_game_context()` with the new `game_context` fixture.
-- Planning CLI now requires `--game fixtures/game_contexts/solids.json`; `--group` is removed. There is no implicit player-group selection.
-- Replace `suggested_cue_ball_speed_mps` with required `cue_stick_speed_mps`. **Do not copy the old number:** these are different physical velocities. Regenerate the plan or explicitly convert using the strike model.
-- Supply required called ball/pocket IDs and a `ball_id` on every guide. Do not infer a missing target from a drawing.
-- `validate_plan_for_state(plan, state, game)` now requires the game context and checks MVP target eligibility and guide references. It still does not validate simulated physics/fouls.
-- Use the updated synthetic fixtures as the reference for both an ordinary pot and an eight-ball finish. Their 1.5 m/s strike speed is illustrative, not measured or optimized.
+Perception and projection need no meter measurement for this coordinate contract. A metric physics engine does need a scale: planning must obtain a measured long-side length or explicitly configure an assumed one. Keep that conversion inside the simulator adapter, not in camera output.
 
-Visual milestone names (aim-only now, trajectories later) are separate from JSON schema versions. All milestones use schema 2.
+For physical long-side length `L` meters:
+
+```text
+position_meters = position_table_units * L
+radius_meters = ball_radius * L
+cue_tip_speed_mps = cue_stick_speed * L
+```
+
+Convert simulated positions/speeds back by dividing by `L`, and adapt the y-axis if the engine uses a different orientation. Friction/acceleration and other dimensional physics must be consistent with that engine's units; changing coordinates alone does not calibrate the physics. Do not treat a normalized length of 1 as a measured one-meter table. Aim geometry works without physical scale; speed and trajectory predictions remain conditional on the chosen model/scale.
+
+## Migrating to schema 3
+
+- All JSON envelopes now use version **3**; versions 1 and 2 are rejected rather than silently reinterpreted.
+- Geometry fields are `length`, `width`, `ball_radius`; pockets use `mouth_width`; balls use optional `position_uncertainty`. The `_m` suffixes have been removed.
+- Divide all previous metric positions, lengths, radii, and uncertainties by the physical long-side length. Set `length=1.0`; keep `width=short_side/long_side`. Do not rescale unit directions, confidence, or timestamps. Establish the new top-left origin/right-down axes explicitly if the old frame differs.
+- `cue_stick_speed_mps` becomes `cue_stick_speed` in table lengths/second: divide the old cue-stick speed by the same physical long-side length. Schema 1's optional cue-ball speed is a different velocity and must not simply be renamed.
+- Update projector calibration. If only the length scale changes and the origin/axes are already identical, `H_normalized = H_meters @ diag(L, L, 1)`. If origin/axes change, include that transform or recalibrate. The sample fixture preserves the same pixel locations.
+- Keep the schema-2 game changes: explicit `GameContext(player_group=...)`, required `--game`, called ball/pocket, and ball IDs on guides. No default practice mode remains.
+- Fixture geometry is now `1.0 × 0.5`, radius `0.0142875`, and illustrative cue-stick speed `0.75` table lengths/second. These are synthetic values, not measurements or optimized shots.
+
+Visual milestones (aim only now, trajectories later) are independent of the JSON schema version. Both use schema 3.

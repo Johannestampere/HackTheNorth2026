@@ -5,9 +5,9 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-# Version 2 makes game context explicit and replaces optional ball speed with
-# required cue-stick speed. Never silently reinterpret a version-1 shot plan.
-SCHEMA_VERSION = 2
+# Version 3 normalizes every distance to the table's long side, with top-left
+# origin. Never silently reinterpret older meter-based geometry or strike speed.
+SCHEMA_VERSION = 3
 
 
 def read_document(path: Path, expected_kind: str) -> dict[str, Any]:

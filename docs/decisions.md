@@ -18,13 +18,13 @@
 These are concrete starting conventions, not claims about selected hardware or completed algorithms:
 
 - Python 3.11+, a standard-library-only shared core, immutable dataclasses, structural protocols, and constructor-based dependency injection.
-- Meters in a fixed table frame; pixels confined to acquisition/rendering boundaries.
+- Table-length units: long side = 1, short side = short/long ratio, top-left origin with x right and y down. Radii and all distances use the same unit; pixels stay at acquisition/rendering boundaries.
 - Known/measured table geometry provided to perception instead of requiring automatic geometry estimation in v1.
 - File-backed camera manifests and versioned JSON fixtures for independent development.
 - RGB-only capture contract; estimated depth stays internal to perception.
 - Explicit partial/unusable/no-shot outcomes instead of fake successful results.
 - Observation/table/calibration/pose IDs to catch inconsistent handoffs.
-- Schema 2 uses explicit WPA 8-ball context. MVP scope is after the break with assigned groups and a placed cue ball, including legal eight-ball finishes. A complete rules engine is not implemented.
+- Schema 3 uses explicit WPA 8-ball context. MVP scope is after the break with assigned groups and a placed cue ball, including legal eight-ball finishes. A complete rules engine is not implemented.
 - RGB8 byte frames with PPM export for dependency-free inspection.
 - A fixed-pose homography target first; rotating target selection and scan orchestration remain future application work.
 - No automatic model downloads, LLM calls, hardware commands, commits, or pushes.
@@ -37,7 +37,8 @@ These are concrete starting conventions, not claims about selected hardware or c
 | Are cameras and projector rigidly mounted to the same rotating assembly? | Extrinsics and pose calibration | Perception + projection |
 | Does 1–2 m height mean above floor or cloth, and what is table distance? | Occlusion, effective resolution, projector throw | Whole team |
 | Is pitch adjustable, and how repeatable is the base? | Whether the table can be reached and alignment retained | Hardware + projection |
-| Which table/balls/pocket dimensions? | Coordinate frame, collision radii, calibration | Whole team |
+| What are the table, ball, and pocket proportions? | Width/long-side ratio, normalized collision radii, calibration | Whole team |
+| What measured or assumed physical scale will the simulator use? | Convert normalized lengths and speeds consistently for metric physics | Planning |
 | Markers/manual calibration acceptable for the demo? | Fast reliable setup versus automatic localization scope | Perception + projection |
 | Required localization/projection error and maximum latency? | Acceptance thresholds and feasible shots | Whole team |
 | What is the initial solver and scoring objective? | Physics fidelity, search cost, implementation effort | Planning |

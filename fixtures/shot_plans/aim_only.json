@@ -1,14 +1,14 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "kind": "shot_plan",
   "data": {
     "observation_id": "synthetic-observation-001",
-    "table_id": "synthetic-table-v1",
+    "table_id": "synthetic-table-normalized-v3",
     "cue_aim": {
       "cue_ball_id": "cue",
       "origin": {
-        "x": 0.6,
-        "y": 0.3
+        "x": 0.3,
+        "y": 0.15
       },
       "direction": {
         "x": 0.8944271909999159,
@@ -19,6 +19,6 @@
     "ghost_ball": null,
     "target_ball_id": "solid-1",
     "target_pocket_id": "xmax-ymax",
-    "cue_stick_speed_mps": 1.5
+    "cue_stick_speed": 0.75
   }
 }

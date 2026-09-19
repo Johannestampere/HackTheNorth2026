@@ -11,7 +11,7 @@ class ShotPlanner(Protocol):
         assignment from game. For the MVP, return InsufficientInformation for
         an open/unknown group, break, ball-in-hand, or incomplete ball map.
         Return NoFeasibleShot if the supported search finds no acceptable pot.
-        Success must include a unit cue direction, cue-stick speed in m/s, and
+        Success must include a unit cue direction, cue-stick speed in table lengths/second, and
         called ball/pocket. Geometry, simulation, and scoring remain internal.
         """
         ...

@@ -38,9 +38,9 @@ Installation may download the setuptools build backend; the `PYTHONPATH` command
 | Teammate 2: planning | `src/companion/pool/planning/` | `TableState` + `GameContext` | `ShotPlan`: cue aim, cue-stick speed, called pot, optional guides |
 | Teammate 3: projection | `src/companion/pool/projection/` | `ShotPlan` + calibrated `ProjectionTarget` | `ProjectionFrame`: packed RGB pixels |
 
-**Contract version: 2.** Planning takes explicit 8-ball game context. Shot plans require a called ball/pocket and cue-stick speed in m/s, separate from the unit aim direction. See the [migration notes](docs/contracts.md#migrating-from-schema-1) before using older fixtures.
+**Contract version: 3.** Planning takes explicit 8-ball game context. Shot plans require a called ball/pocket and cue-stick speed in table lengths/second, separate from the unit aim direction. See the [migration notes](docs/contracts.md#migrating-to-schema-3) before using older fixtures.
 
-All positions crossing pool stage boundaries are **meters in the same table coordinate frame**. Camera pixels, projector pixels, motor angles, and table coordinates are distinct quantities.
+All positions crossing pool stage boundaries are **table-length units: long side = 1, short side = short/long ratio**. Origin is top-left in the agreed top-down view, x right and y down. Camera pixels, projector pixels, motor angles, and table coordinates are distinct quantities.
 
 - [Architecture and scope](docs/architecture.md): the whole system, OOP boundaries, and runtime sequence.
 - [Shared contracts](docs/contracts.md): fields, units, enums, serialization, and errors.

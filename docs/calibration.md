@@ -9,15 +9,15 @@ Measure the actual table, cameras, projector, and mount before selecting accurac
 ## Camera calibration: teammate 1
 
 1. Determine RGB lens intrinsics and distortion at the resolution used for inference.
-2. Document the RGB depth-estimation model and its output scale. Verify how estimates relate to known table dimensions and ball radius before treating them as metric coordinates.
-3. Measure playing-surface dimensions, ball radius, and pocket mouths. Mark the table origin/axes.
+2. Document the RGB depth-estimation model and its output scale. Normalize estimated geometry by the playing surface long side. Output positions and radius in table-length units, not the depth model's raw scale.
+3. Determine short-side/long-side ratio, ball radius/long-side ratio, and pocket widths/long-side ratio. Fix the top-left origin in an agreed top-down view, with x right and y down. The long side is 1.0; do not stretch the short side to 1.0.
 4. Establish camera pose relative to the table for every repeatable scan view. Measured markers around the rails are a practical starting point when all four corners cannot be seen at once. Marker heights must be accounted for; rail-top markers are not necessarily coplanar with the cloth.
 5. Record a calibration ID and resolve each `view_id` to the applicable pose.
 6. Evaluate accuracy at near, middle, and far regions against measured positions.
 
 A cloth-plane homography maps planar cloth points; a ball center is above that plane. Directly warping a bounding-box center as if it lay on the cloth creates side-view parallax error. Use calibrated sphere/contour geometry and known radius, with model-estimated depth as supporting evidence. A depth estimate at the visible ball surface is not automatically its center. Intersecting a detected visual-center ray with a center-height plane is an approximation unless the detector geometry supports it; measure its error.
 
-There is no depth sensor or RGB/depth registration step. Evaluate the chosen model on actual oblique table images; do not assume its depth output is accurate in meters without validation against known geometry.
+There is no depth sensor or RGB/depth registration step. Evaluate the chosen model on actual oblique table images; validate its normalized geometry against the table proportions. Known real dimensions can supply metric scale from RGB if needed later, but no metric scale is required in perception output.
 
 ## Multi-view capture
 
@@ -34,7 +34,7 @@ This does not inherently require ML for stitching. ML may detect/classify balls,
 
 ## Projector calibration: teammate 3
 
-For a fixed pose and planar cloth, estimate a homography from table coordinates to output pixels. Practical first pass:
+For a fixed pose and planar cloth, estimate a homography from normalized table coordinates to output pixels. Use the same top-left origin, x right and y down, with corners `(0,0)`, `(1,0)`, `(0,width)`, and `(1,width)`. This mapping does not require the real table length in meters. Practical first pass:
 
 1. Lock output resolution, display scaling, projector optics, and keystone behavior.
 2. Project dots at known pixel locations.

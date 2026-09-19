@@ -13,7 +13,7 @@ Homography = tuple[tuple[float, float, float], tuple[float, float, float], tuple
 class ProjectionTarget:
     """Table-to-projector calibration for one fixed pose and output resolution.
 
-    ``table_to_pixel`` maps homogeneous table coordinates (x, y, 1) in meters
+    ``table_to_pixel`` maps homogeneous (x, y, 1) in table-length units
     to projector pixels after division by the third component. Geometry supplies
     table bounds and ball radius; IDs identify the calibration and physical pose.
     """

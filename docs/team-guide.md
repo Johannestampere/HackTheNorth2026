@@ -25,7 +25,7 @@ Suggested internal split as code grows:
 
 ```text
 detector.py       Image → masks/centers/type probabilities
-localization.py   Calibrated observations → ball centers in table meters
+localization.py   Calibrated observations → ball centers in table-length units
 fusion.py         Merge observations/deduplicate; coverage and uncertainty
 calibration.py    RGB camera intrinsics/extrinsics and table pose
 ```
@@ -35,12 +35,12 @@ First milestone:
 1. Record stationary real table views and calibration metadata.
 2. Identify the playing plane and its marked coordinate axes.
 3. Detect balls in RGB. Classify cue/solid/stripe/eight; retain unknown when evidence is insufficient.
-4. Run a depth-estimation model on RGB and recover physical centers with ball-height correction. Keep the estimated depth inside perception and establish its scale against known table/ball geometry before returning meters.
+4. Run a depth-estimation model on RGB and recover physical centers with ball-height correction. Keep the estimated depth inside perception and normalize positions and ball radius by the long side before returning them. Use the agreed top-left origin, x right and y down; do not independently normalize the short side.
 5. Compare estimates against measured positions and emit a valid JSON state.
 
 Then add multi-view capture fusion. The merge occurs in table coordinates; panorama stitching is not required. Deduplicate repeated observations rather than concatenating balls. Never infer a missing stripe's identity confidently from one occluded side. Return `NeedsMoreViews` when coverage is unresolved. Any ball movement during a scan invalidates that stationary-state batch.
 
-Acceptance evidence: real oblique captures plus measured truth; localization error in mm at near/far table regions; classification results including unknowns; duplicate handling across overlapping views; incomplete and moving-scene outcomes. The team must choose an accuracy target after measuring the hardware; no claimed threshold is baked into the skeleton.
+Acceptance evidence: real oblique captures plus measured truth; localization error in table-length units at near/far table regions; classification results including unknowns; duplicate handling across overlapping views; incomplete and moving-scene outcomes. The team must choose an accuracy target after measuring the hardware; no claimed threshold is baked into the skeleton.
 
 Run independently:
 
@@ -67,7 +67,7 @@ physics.py        Deterministic trajectory simulation behind a local interface
 scoring.py        Target success, scratch risk, difficulty, position
 ```
 
-The first display shows anchored cue direction; later add cue/object-ball paths and ghost-ball position. Every successful plan already requires cue-stick speed in m/s and called target ball/pocket. Each guide carries its ball ID. Keep the same `ShotPlan` boundary; display milestones are not JSON schema versions.
+The first display shows anchored cue direction; later add cue/object-ball paths and ghost-ball position. Every successful plan already requires cue-stick speed in table lengths/second and called target ball/pocket. Each guide carries its ball ID. Keep the same `ShotPlan` boundary; display milestones are not JSON schema versions.
 
 Recommended first algorithm: direct no-spin shots. For object-ball position B, pocket position P, and radius r:
 
@@ -77,7 +77,7 @@ ghost_ball = B - 2r*d
 cue_direction = normalize(ghost_ball - cue_position)
 ```
 
-Check path clearance using ball radius, finite segments, and endpoint/contact geometry; a zero-width line intersection check is insufficient. Reject invalid/degenerate candidate geometry. Simulate a bounded set of directions/speeds, then rank according to a documented objective. Handle scratch risk and other balls as obstacles, including unknown types. Tune rolling friction, cushion response, and speed against real observations before presenting predicted paths as accurate.
+Check path clearance using ball radius, finite segments, and endpoint/contact geometry; a zero-width line intersection check is insufficient. Reject invalid/degenerate candidate geometry. Simulate a bounded set of directions/speeds, then rank according to a documented objective. Handle scratch risk and other balls as obstacles, including unknown types. Keep any metric simulator conversion inside physics.py: multiply normalized lengths and cue-stick speed by a measured or explicitly assumed physical long-side length, then convert simulated paths back. Tune rolling friction, cushion response, and speed against real observations before presenting predicted paths as accurate.
 
 Physics engines, ML, or RL can fit behind this interface. Analytic geometry plus a simple simulation is the suggested initial approach; no choice is mandated. “Best” means best among the evaluated candidates under the model. A confidence number would require uncertainty trials or evaluation, so the scaffold does not invent one.
 
