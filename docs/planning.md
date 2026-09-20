@@ -38,7 +38,7 @@ The default seed is 7; change it with `--seed`. This is a generated 16-ball spre
 - `service.py`: configuration, input checks, bounded search, scoring, and `ShotPlan` construction. `last_selection` exposes private diagnostics only for tests/demo.
 - `candidates.py`: private candidate record, legal target group, and finite swept-ball path checks.
 - `physics.py`: all Pooltool imports, coordinate conversion, table construction, ghost-ball candidates, simulation, outcome classification, and trajectories.
-- `lookahead.py`: bounded second-shot search from multiple sampled first-shot outcomes.
+- `lookahead.py`: bounded recursive own-turn search from multiple sampled outcomes.
 - `uncertainty.py`: repeatable error samples, empirical outcome counts, utility and diverse shortlisting.
 - `demo.py` / `replay.html`: synthetic self-play runner and offline viewer.
 
@@ -49,7 +49,7 @@ The default seed is 7; change it with `--seed`. This is a generated 16-ball spre
 3. Generate legal ball/pocket candidates using Pooltool's ghost-ball and potting-angle helpers. Check swept cue/object paths, ghost-ball bounds, pocket jaws, and cuts no greater than 75 degrees.
 4. Search up to 16 geometric candidates, five cue speeds (0.35, 0.5, 0.7, 0.95, 1.25 table lengths/s), and offsets of 0, -0.75, +0.75 degrees. Maximum 240 nominal simulations per call.
 5. Inspect collision and pocket events. Discard scratches, illegal first contact, early/wrong-pocket eight-ball losses, and failed called pots. A shot must pocket a ball or hit a rail after first contact.
-6. Build a diverse shortlist of up to 12 nominal successes, round-robin across ball/pocket pairs. Evaluate each against the same 24 perturbed layouts/strikes. Rank by empirical utility (below); break ties by success rate, fewer rack losses/fouls, nominal win, follow-up availability/ease, current geometric difficulty and speed. Then compare the top three using actual second-shot search described below.
+6. Build a diverse shortlist of up to 12 nominal successes, round-robin across ball/pocket pairs. Evaluate each against the same 24 perturbed layouts/strikes. Rank by empirical utility (below); break ties by success rate, fewer rack losses/fouls, nominal win, follow-up availability/ease, current geometric difficulty and speed. Then compare the top three using the multi-shot search described below.
 7. Return a forward unit cue vector, cue-tip speed, called ball/pocket, actual simulated cue center at first contact, and event-to-event path guides. If none succeeds, return `NoFeasibleShot`; this does not mean no legal shot exists.
 
 The adapter inspects Pooltool events directly for the supported rule subset, rather than initializing its full rules engine with a reconstructed game history. Breaks, ball-in-hand placement, jumped balls, physical cue fouls, and safeties remain unsupported. Expected input limitations return typed outcomes; unexpected simulator errors are not silently converted into a successful recommendation.
@@ -91,7 +91,7 @@ Each trial contributes exactly one outcome, in this precedence:
 
 The mean utility ranks candidates for the lookahead shortlist. These are engineering weights, not measured game values; they penalize dangerous shots without implementing opponent lookahead. Sampled success rate is `(wins + legal called pots) / trials`. `SelectedShot.stats` includes all five counts; it stays private and does not change `ShotPlan` or schema 3. Displayed paths remain the nominal prediction, not an uncertainty envelope. A 24-trial estimate is coarse (one trial changes a rate by about 4.2 percentage points), selection uses the same trials as reporting, and zero observed fouls is not proof of zero risk. No minimum success threshold or calibrated real-world probability is claimed.
 
-First-shot cost: at most 240 nominal simulations + 12 × 24 uncertainty trials = 528 simulations. Seeds make runs repeatable; increasing `uncertainty_trials` trades latency for less sampling variation. Diverse shortlisting still prunes the search, so the winner is only best among evaluated candidates. A bounded second-shot search is now enabled by default; no opponent replies or third shots are searched.
+First-shot cost: at most 240 nominal simulations + 12 × 24 uncertainty trials = 528 simulations. Seeds make runs repeatable; increasing `uncertainty_trials` trades latency for less sampling variation. Diverse shortlisting still prunes the search, so the winner is only best among evaluated candidates. A bounded four-shot own-turn search is now enabled by default; opponent replies are not searched.
 
 ```sh
 PYTHONPATH=src .venv/bin/python -m companion.pool.planning.demo \
@@ -100,21 +100,38 @@ PYTHONPATH=src .venv/bin/python -m companion.pool.planning.demo \
 
 The noisy replay keeps the nominal guides visible while balls follow the independently sampled strike. It reports trial success rates and records aim/speed error, empirical statistics, and executed outcomes in JSON. On seed 23 the tested run includes a legal miss and a later scratch, then honestly stops for placement.
 
-## Two-shot lookahead
+## Three- and four-shot lookahead
 
-Enabled by `PlannerConfig.lookahead` (set False for an immediate-only baseline).
+`PlannerConfig.search_depth` counts the current shot and accepts 1–4 (default 4). `lookahead=False` or depth 1 selects the immediate-only baseline. The shared `ShotPlan` still describes just the next strike; every real observation triggers a fresh decision.
 
-1. Keep the top three first strikes by uncertainty score.
-2. Take up to three evenly spaced trials from each first strike's seeded uncertainty batch. Use their actual settled positions, not just the perfect nominal result.
-3. A missed call, foul, rack loss, or completed win gets zero future bonus. It remains in the average; immediate costs/rewards are already counted in root utility.
-4. After a successful nonterminal called pot, re-plan from that sampled position. Search up to two second-shot ball/pocket candidates with the configured speeds/angles (at most 30 nominal simulations), then up to three successful strikes with five noise trials each (at most 15 more).
-5. Rank root finalists by **first-shot mean utility + 0.5 × mean continuation utility**. The same +3 win / +1 pot / 0 miss / -2 foul / -5 loss values apply to second shots. Prior first-shot ranking breaks ties. No viable positive continuation earns zero bonus.
+1. Keep the top three first strikes by uncertainty score and sample up to three evenly spaced first-shot outcomes for each.
+2. Misses, fouls, losses, and completed wins stop the branch with no continuation bonus. They remain in the averaging denominator.
+3. After a legal nonterminal pot, search the next observed position. Each node evaluates up to two ball/pocket candidates, at most 30 nominal strikes, then up to three successful strikes with up to five shared uncertainty samples (15 calls).
+4. Keep the two strongest actions at that node. Expand up to two sampled outcomes of each to the next depth. This is a narrow, pruned own-turn tree, not exhaustive game search.
+5. Apply the same scoring recursively: **immediate mean utility + 0.5 × average continuation value**. Future value is floored at zero because the model has no safety/opponent alternative. First-shot ranking breaks root ties.
 
-The second aim is adapted to the new observed position, as our real system would do after a shot. Exact settled observations at this boundary are optimistic; second-shot uncertainty trials still perturb the layout and strike. This is a small sampled approximation, not a calibrated rack-win probability, full minimax, or shortest-path guarantee. Three branches and five second-shot trials are intentionally coarse. A favorable continuation can justify a slightly less reliable first shot; the discount controls that tradeoff. Negative continuation estimates are floored at zero because the planner does not model the alternative safety/opponent turn.
+Default hard cap: **4,000 physics simulations per decision**. First-shot search needs at most 528. The remaining quota is split evenly between root branches, then between child actions/outcomes. Each node reserves calls for uncertainty testing and respects its quota; unused sibling quota is not redistributed. A narrow layout or terminal branch can use much less than the configured cap. This limits simulation count, not wall-clock time; Pi timings have not been benchmarked.
 
-Default maximum: **528 + 3 × 3 × 45 = 933 simulations**. `simulation_budget=1000` is a hard configured bound: settings that could exceed it during the first-shot phase are rejected; remaining budget is divided equally among lookahead branches. Each branch checks its quota before simulating. Terminal/unavailable branches use fewer calls. `SelectedShot.simulations` counts actual calls including lookahead; `lookahead_simulations` and `lookahead_diagnostics` expose the breakdown privately. Shared schema 3 is unchanged.
+If depth or budget is exhausted, the search returns the value already established at that node. It retains a legal nominal first-shot recommendation. `reached_depth` reports the deepest evaluated level, including alternative branches; it does not mean every branch reached that depth. `budget_limited` means some subtree received insufficient quota for its full local search, even if other branches left budget unused. `paths` lists one illustrative target-ball sequence per root outcome. These are conditional examples, not guaranteed executable instructions or win probabilities.
 
-The replay displays the selected immediate/continuation scores and next-target IDs across sampled outcomes. These are conditional alternatives, not a guaranteed route. The next actual turn always runs the planner again.
+Deeper branches re-plan their aim after observing the previous settled layout. Exact observations at that boundary are optimistic; each subsequent strike still receives noisy position/aim/speed trials. First-shot errors use 24 trials, deeper errors at most five; this coarse sampling can miss risks and should not be presented as calibrated confidence. The branch stops if its settled state cannot be represented by our table contract.
+
+```sh
+# One decision on the generated spread rack, with replay diagnostics:
+PYTHONPATH=src .venv/bin/python -m companion.pool.planning.demo \
+  --max-shots 1 --search-depth 4 --simulation-budget 4000 \
+  --output artifacts/pool-depth-four.html
+
+# The plan and project commands accept the same options:
+PYTHONPATH=src .venv/bin/python -m companion.app plan \
+  --state fixtures/table_states/direct_shot.json \
+  --game fixtures/game_contexts/solids.json \
+  --search-depth 3 --simulation-budget 2500 --output artifacts/shot-plan.json
+```
+
+The replay reports requested/reached depth, truncation, actual lookahead calls, and illustrative target sequences. Depth 2 with a 1,000-call budget remains available for comparison. Settings whose first-shot worst-case cost already exceeds the budget fail validation rather than silently overrunning it.
+
+This can search a complete runout when the remaining own balls plus the eight fit within four shots. It cannot predict the whole game: opponent decisions, safeties, ball-in-hand, banks, and breaks remain unsupported.
 
 ## Next milestones
 
@@ -131,4 +148,4 @@ PYTHONPATH=src .venv/bin/python -m companion.pool.planning.demo \
   --compare-angles --output artifacts/pool-angle-comparison.html
 ```
 
-This uses the direct-shot fixture by default (`--state` overrides it). Every replay starts from the exact same positions. The dropdown includes all nominal ball/pocket candidates, each at all five speeds and three aim offsets, including failed pots and fouls. Labels show the absolute angle in the shared frame (0° right, 90° down), engine-frame offset, speed in table lengths/second, and outcome. `SELECTED` identifies the actual recommended strike. Play steps through attempts; the dropdown selects any attempt directly. This is the initial candidate grid, not all random uncertainty samples or second-shot searches. Re-simulation is deterministic with the same adapter/configuration.
+This uses the direct-shot fixture by default (`--state` overrides it). Every replay starts from the exact same positions. The dropdown includes all nominal ball/pocket candidates, each at all five speeds and three aim offsets, including failed pots and fouls. Labels show the absolute angle in the shared frame (0° right, 90° down), engine-frame offset, speed in table lengths/second, and outcome. `SELECTED` identifies the actual recommended strike. Play steps through attempts; the dropdown selects any attempt directly. This is the initial candidate grid, not all random uncertainty samples or future-shot searches. Re-simulation is deterministic with the same adapter/configuration.

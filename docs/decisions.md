@@ -11,7 +11,7 @@
 - Perception turns oblique/multiple captures into ball `(x,y,type)` data.
 - Planning aims for eventual rack success. The first display produces cue alignment; later displays add predicted paths. A plan includes called ball/pocket and cue-stick speed from the start.
 - Projection turns physical vectors into perspective-correct projector pixels.
-- Initial planner: Pooltool 0.6.0, bounded direct-pot angle/speed search, sampled uncertainty utility, and bounded two-shot lookahead (maximum 933 default simulations). See [implementation](planning.md).
+- Initial planner: Pooltool 0.6.0, bounded direct-pot angle/speed search, sampled uncertainty utility, and bounded four-shot own-turn lookahead (4,000-call default budget). See [implementation](planning.md).
 
 ## Engineering defaults in this scaffold
 

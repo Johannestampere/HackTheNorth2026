@@ -65,7 +65,7 @@ ShotRenderer.render(plan: ShotPlan, target: ProjectionTarget) -> ProjectionFrame
 TaskRouter.route(first_capture: CameraCapture) -> RoutingDecision
 ```
 
-The concrete `PooltoolPlanner` implements Pooltool-based direct-pot search. `PerceptionService`, `ProjectionService`, and `LLMRouter` remain unimplemented. No subclass declaration is required to satisfy a protocol. Shared contracts and pipeline behavior are implemented.
+The concrete `PooltoolPlanner` implements Pooltool-based direct-pot search. `ProjectionService` renders calibrated guidance, with explicit HTTP output via `HttpProjector`. `PerceptionService` and `LLMRouter` remain unimplemented. No subclass declaration is required to satisfy a protocol. Shared contracts and pipeline behavior are implemented.
 
 ## Pool orchestration
 

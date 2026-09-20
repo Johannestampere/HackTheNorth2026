@@ -19,6 +19,8 @@ class PlannerConfig:
 
     The nominal search tests every listed speed and angle offset for the best
     geometric candidates. Seeded uncertainty trials rank nominal successes by sampled utility.
+    search_depth includes the current shot (1–4). simulation_budget bounds
+    physics calls across the whole decision, not elapsed seconds.
     This is not a learned policy or a calibrated win-probability estimator.
     """
 
@@ -29,7 +31,8 @@ class PlannerConfig:
     shortlist_size: int = 12
     uncertainty_trials: int = 24
     random_seed: int = 17
-    simulation_budget: int = 1000
+    simulation_budget: int = 4000
+    search_depth: int = 4
     lookahead: bool = True
     errors: ErrorModel = field(default_factory=ErrorModel)
 
@@ -47,6 +50,8 @@ class PlannerConfig:
         nominal_limit = self.max_candidates*len(self.speeds)*len(self.angle_offsets)
         if nominal_limit+self.shortlist_size*self.uncertainty_trials > self.simulation_budget:
             raise ValueError("Simulation budget must cover configured nominal and uncertainty search")
+        if type(self.search_depth) is not int or not 1 <= self.search_depth <= 4:
+            raise ValueError("search_depth must be an integer from 1 to 4")
         if type(self.lookahead) is not bool:
             raise ValueError("lookahead must be a bool")
 
@@ -88,7 +93,7 @@ class PooltoolPlanner:
         """Search center-ball direct pots and emit the best supported nominal shot.
 
         Rank nominally legal pots by sampled win/pot/miss/foul/loss utility.
-        Compare the top three strikes using simulated second shots across
+        Compare the top three strikes using bounded multi-shot continuations across
         sampled first-shot outcomes, within the configured simulation budget.
         """
         self.last_selection = None
@@ -167,7 +172,7 @@ class PooltoolPlanner:
                      -candidate.difficulty, -speed)
             ranked.append((score, candidate, speed, phi, simulation, outcome, stats, root_trials))
         diagnostics, future_simulations = [], 0
-        if self.config.lookahead:
+        if self.config.lookahead and self.config.search_depth > 1:
             from .lookahead import compare_futures
             best, diagnostics, future_simulations = compare_futures(
                 adapter, ranked, state, game, self.config,
