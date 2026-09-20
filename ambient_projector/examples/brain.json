@@ -1,0 +1,74 @@
+{
+  "title": "How the brain turns input into action",
+  "notes": [
+    "Sensory signals carry information from the world.",
+    "Brain networks interpret signals and help select a response.",
+    "Simplified concept map \u2014 real pathways interact in both directions."
+  ],
+  "elements": [
+    {
+      "kind": "ellipse",
+      "x": 0.05,
+      "y": 0.2,
+      "x2": 0.29,
+      "y2": 0.7,
+      "text": "",
+      "color": "cyan"
+    },
+    {
+      "kind": "text",
+      "x": 0.07,
+      "y": 0.36,
+      "x2": 0.27,
+      "y2": 0.57,
+      "text": "Input",
+      "color": "white"
+    },
+    {
+      "kind": "arrow",
+      "x": 0.31,
+      "y": 0.45,
+      "x2": 0.44,
+      "y2": 0.45,
+      "text": "",
+      "color": "yellow"
+    },
+    {
+      "kind": "rectangle",
+      "x": 0.46,
+      "y": 0.2,
+      "x2": 0.7,
+      "y2": 0.7,
+      "text": "",
+      "color": "pink"
+    },
+    {
+      "kind": "text",
+      "x": 0.48,
+      "y": 0.33,
+      "x2": 0.68,
+      "y2": 0.58,
+      "text": "Processing",
+      "color": "white"
+    },
+    {
+      "kind": "arrow",
+      "x": 0.72,
+      "y": 0.45,
+      "x2": 0.84,
+      "y2": 0.45,
+      "text": "",
+      "color": "yellow"
+    },
+    {
+      "kind": "text",
+      "x": 0.85,
+      "y": 0.33,
+      "x2": 0.97,
+      "y2": 0.58,
+      "text": "Action",
+      "color": "green"
+    }
+  ],
+  "illustration_prompt": ""
+}
