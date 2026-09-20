@@ -1,22 +1,32 @@
-# Ambient projector: camera context → web image → wall
+# Ambient projector: camera context → helpful text → wall
 
-The default experience displays a **real web image full-screen**. No generated
-slide layouts, captions, or primitive drawings are added to the live output.
+By default, OpenAI uses the camera snapshot and optional speech to return a title
+and helpful plain text. The renderer enforces only **black background, white text,
+and a title at the top**. The body can contain paragraphs, lists, or steps; there
+is no fixed number of sections. Text wraps and scales to fit, with a minimum
+readable font size. Excessively long output fails rather than clipping or
+shrinking into unreadable text.
 
-1. Optionally record and transcribe a short microphone clip.
-2. Blank projection and capture a webcam snapshot.
-3. OpenAI chooses a useful image-search query from the image and speech.
-4. Search Wikimedia Commons for actual images (no separate search API key).
-5. OpenAI selects one result using titles/descriptions. It does not verify the
-   image visually or guarantee its scientific accuracy.
-6. Download the image and fit it to the projector, preserving labels and aspect
-   ratio. Unused space is black; transparent diagrams receive a white background.
-7. Save the source, creator, credit and license metadata alongside the image.
+The model should explain something useful, answer the spoken question, or ask
+for missing context. Seeing a pool table alone does not establish which game or
+rules apply, and this mode does not calculate shots. Use the pool planner for
+shot recommendations.
 
-Example: a biology textbook and speech about the cerebellum can lead to a
-cerebellum diagram. Queries and URLs are separate: the model cannot invent a
-URL for the downloader. This searches **Commons**, not all of Google Images.
-Search quality and coverage vary; an empty search leaves the display blank.
+Use `--web-images` to explicitly choose the previous image-search experience:
+OpenAI chooses a query, searches Wikimedia Commons, selects from result metadata,
+and downloads an image. It does not visually verify search results. Images keep
+their aspect ratio, and source/credit/license metadata is saved separately.
+
+## Offline text preview
+
+```bash
+ambient_projector/.venv/bin/python -m ambient_projector.app \
+  --scene ambient_projector/examples/helpful-text.json --once
+```
+
+This uses a fixture, without a camera, network, or API key. `latest.png` contains
+the rendered output; `latest.json` contains the title and body. Add
+`--projector-url http://127.0.0.1:8080` to display it on the Pi.
 
 ## Install
 
@@ -62,7 +72,7 @@ attribution when sharing or publicly presenting the image. We retain metadata
 but do not draw it over the image. Files are replaced each cycle, not accumulated.
 Use `--outdir /absolute/path` to choose another output location.
 
-## Camera → image → projector
+## Camera → helpful text → projector
 
 Start the existing Pi display if it is not already running (see
 `/home/jack/HackTheNorth2026/raspi/README.md` for pygame/HDMI setup):
@@ -78,7 +88,7 @@ In another terminal:
 cd /home/jack/HackTheNorth2026
 ambient_projector/.venv/bin/python -m ambient_projector.app \
   --camera 0 --once \
-  --request 'Show an educational image that helps explain what I am reading.' \
+  --request 'Give useful, concise guidance about what I am looking at.' \
   --projector-url http://127.0.0.1:8080
 ```
 
@@ -117,8 +127,8 @@ when the recording message appears. Audio is transcribed before the snapshot.
 
 ## Timing, failures, and data
 
-- Each cycle uses up to two vision/text requests (query and metadata selection),
-  plus optional transcription, Commons search and an image download. Cycles do
+- Text mode uses one vision/text request plus optional transcription. Web-image
+  mode uses up to two requests, Commons search and an image download. Cycles do
   not overlap; 20 seconds is a minimum start-to-start interval, not a latency SLA.
 - OpenAI requests have a 90-second timeout and no SDK retries. Web requests have
   a 20-second timeout; at most three candidate images are attempted. No image
@@ -150,7 +160,8 @@ still depend on your device/network/key; offline tests do not prove those work.
 
 `app.py` composes the loop, `ai.py` handles model calls, `web_images.py` searches,
 downloads and fits images, and `devices.py` handles capture/display. `scene.py`
-and `render.py` support the retained offline diagram example only in the CLI.
+and `render.py` validate and render text pages as well as the retained offline
+diagram example.
 
 References: [Commons image metadata API](https://www.mediawiki.org/wiki/API:Imageinfo),
 [OpenAI image inputs](https://developers.openai.com/api/docs/guides/images-vision),

@@ -75,3 +75,47 @@ class Renderer:
         if illustration is not None:
             draw.text((margin,h-18),'AI-generated illustration',font=ImageFont.load_default(size=12),fill='#aaaaaa')
         return image
+
+
+def render_text_page(page,width,height):
+    """Black background, white text, title above free-form body; no slide template."""
+    image=Image.new('RGB',(width,height),'black')
+    draw=ImageDraw.Draw(image)
+    margin=round(min(width,height)*.055)
+    scale=min(width/1280,height/720)
+    punctuation=str.maketrans({'—':' - ','–':'-','‘':"'",'’':"'",'“':'"','”':'"','→':' -> ','…':'...'})
+
+    def block(text,top,bottom,maximum,minimum):
+        text=text.translate(punctuation)
+        for size in range(maximum,minimum-1,-1):
+            font=ImageFont.load_default(size=size)
+            rows=[]
+            for paragraph in text.split('\n'):
+                line=''
+                if not paragraph.strip():
+                    rows.append(''); continue
+                for word in paragraph.split():
+                    candidate=(line+' '+word).strip()
+                    if draw.textlength(candidate,font=font)<=width-2*margin:
+                        line=candidate
+                    else:
+                        if line: rows.append(line)
+                        line=''
+                        for char in word:
+                            if draw.textlength(line+char,font=font)>width-2*margin:
+                                rows.append(line); line=''
+                            line+=char
+                if line: rows.append(line)
+            step=round(size*1.4)
+            if len(rows)*step<=bottom-top:
+                y=top
+                for row in rows:
+                    draw.text((margin,y),row,font=font,fill='white',anchor='lt')
+                    y+=step
+                return y
+        raise ValueError('Text is too long to project readably; request a shorter answer')
+
+    title_end=block(page.title,margin,int(height*.23),max(28,round(64*scale)),max(20,round(36*scale)))
+    block(page.body,title_end+round(30*scale),height-margin,
+          max(22,round(42*scale)),max(18,round(28*scale)))
+    return image

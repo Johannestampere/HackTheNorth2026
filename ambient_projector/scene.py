@@ -81,3 +81,29 @@ class Scene:
 
     def as_dict(self):
         return asdict(self)
+
+
+@dataclass(frozen=True)
+class TextPage:
+    """Flexible plain text: a title and body, with paragraph/list structure intact.
+
+    Length limits bound input size only; there is no required number of sections,
+    bullets or paragraphs. The renderer independently enforces readable fitting.
+    """
+    title: str
+    body: str
+
+    def __post_init__(self):
+        text_value(self.title,200)
+        if not self.title.strip() or not isinstance(self.body,str) or not self.body.strip() or len(self.body)>4000:
+            raise ValueError('Text page needs a title and a nonempty body of at most 4000 characters')
+        if not self.body.replace('\n','').isprintable():
+            raise ValueError('Body may contain printable text and newlines only')
+
+    @classmethod
+    def from_dict(cls,data):
+        if not isinstance(data,dict) or set(data)!={'title','body'}:
+            raise ValueError('Text page must contain title and body')
+        return cls(**data)
+
+    def as_dict(self): return asdict(self)

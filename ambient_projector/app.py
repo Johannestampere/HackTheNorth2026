@@ -1,4 +1,4 @@
-"""Camera → optional speech → OpenAI image search → full-screen web image."""
+"""Camera → optional speech → OpenAI helpful text (or optional web image) → projector."""
 import argparse
 import json
 import logging
@@ -9,8 +9,8 @@ import time
 from PIL import Image
 from .ai import SceneAI
 from .devices import Camera, Microphone, Projector
-from .render import Renderer
-from .scene import Scene
+from .render import Renderer, render_text_page
+from .scene import Scene, TextPage
 from .web_images import WebImages, fullscreen
 
 LOG=logging.getLogger('ambient_projector')
@@ -18,10 +18,11 @@ LOG=logging.getLogger('ambient_projector')
 
 class Companion:
     """One bounded update at a time. Dependencies are injected for offline tests."""
-    def __init__(self,ai,renderer,outdir,projector=None,camera=None,microphone=None,illustrations=False,image_search=None):
+    def __init__(self,ai,renderer,outdir,projector=None,camera=None,microphone=None,illustrations=False,image_search=None,text_mode=False):
         self.ai,self.renderer,self.outdir=ai,renderer,Path(outdir)
         self.projector,self.camera,self.microphone=projector,camera,microphone
         self.illustrations=illustrations
+        self.text_mode=text_mode
         self.image_search=image_search
         self.previous=None
 
@@ -31,7 +32,8 @@ class Companion:
         if query:
             return self.project_search(query)
         if scene_path:
-            scene=Scene.from_dict(json.loads(Path(scene_path).read_text()))
+            data=json.loads(Path(scene_path).read_text())
+            scene=TextPage.from_dict(data) if 'body' in data else Scene.from_dict(data)
         else:
             if self.microphone:
                 LOG.info('Recording microphone for %.1f seconds',self.microphone.seconds)
@@ -49,15 +51,17 @@ class Companion:
                 query=self.ai.image_query(image,transcript,request)
                 return self.project_search(query)
             LOG.info('Asking OpenAI for visual guidance')
-            scene=self.ai.understand(image,transcript,request,self.illustrations)
+            scene=(self.ai.helpful_text(image,transcript,request) if self.text_mode
+                   else self.ai.understand(image,transcript,request,self.illustrations))
         illustration=None
-        if self.illustrations and scene.illustration_prompt and self.ai is not None:
+        if not isinstance(scene,TextPage) and self.illustrations and scene.illustration_prompt and self.ai is not None:
             try:
                 LOG.info('Generating illustration; this can take longer than the update interval')
                 illustration=self.ai.illustrate(scene.illustration_prompt)
             except Exception as error:
                 LOG.warning('Illustration unavailable (%s); using the diagram',type(error).__name__)
-        frame=self.renderer.render(scene,illustration)
+        frame=(render_text_page(scene,self.renderer.width,self.renderer.height)
+               if isinstance(scene,TextPage) else self.renderer.render(scene,illustration))
         self.outdir.mkdir(parents=True,exist_ok=True)
         # Replace latest files instead of accumulating camera/audio history.
         temporary=self.outdir/'next.png'; frame.save(temporary,format='PNG')
@@ -109,7 +113,8 @@ def main(argv=None):
     source=parser.add_mutually_exclusive_group()
     source.add_argument('--image',type=Path,help='Use a saved photo instead of a webcam')
     source.add_argument('--query',help='Search directly without camera or OpenAI; uses first usable result')
-    source.add_argument('--scene',type=Path,help='Offline drawing JSON; no OpenAI calls')
+    source.add_argument('--scene',type=Path,help='Offline title/body or drawing JSON; no OpenAI calls')
+    parser.add_argument('--web-images',action='store_true',help='Search web images instead of the default helpful text')
     parser.add_argument('--camera',type=int,default=0)
     parser.add_argument('--audio',action='store_true',help='Enable microphone recording and cloud transcription')
     parser.add_argument('--audio-seconds',type=float,default=6)
@@ -146,7 +151,8 @@ def main(argv=None):
     projector=Projector(args.projector_url,args.width,args.height) if args.projector_url else None
     companion=Companion(ai,renderer,args.outdir,projector,Camera(args.camera),
                         Microphone(args.audio_seconds,args.audio_device) if args.audio else None,
-                        image_search=WebImages() if not args.scene else None)
+                        image_search=WebImages() if (args.web_images or args.query) and not args.scene else None,
+                        text_mode=True)
     try:
         while True:
             started=time.monotonic()
