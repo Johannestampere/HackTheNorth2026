@@ -1382,7 +1382,8 @@ def test_a_bad_checkpoint_is_refused_rather_than_believed(tmp_path: Path):
     all, which is a state the detector already handles.
     """
     torch = pytest.importorskip("torch")
-    from classify.net.kinds import LABELS, load_classifier
+    from companion.pool.perception.vision.classify.net.kinds import (
+        LABELS, load_classifier)
 
     assert load_classifier(tmp_path / "absent.pt") is None
 
