@@ -1,42 +1,26 @@
-# Ambient projector companion
+# Ambient projector: camera context → web image → wall
 
-A standalone fallback demo, independent of pool detection, planning, calibration,
-Torch, and matplotlib. Point a USB camera at what you are doing; it periodically
-asks OpenAI what extra information would help, then projects text and diagrams
-onto a fixed wall/surface. Optional microphone clips add spoken context. Optional
-image generation adds illustrations, such as a brain while studying biology.
+The default experience displays a **real web image full-screen**. No generated
+slide layouts, captions, or primitive drawings are added to the live output.
 
-## What actually happens
+1. Optionally record and transcribe a short microphone clip.
+2. Blank projection and capture a webcam snapshot.
+3. OpenAI chooses a useful image-search query from the image and speech.
+4. Search Wikimedia Commons for actual images (no separate search API key).
+5. OpenAI selects one result using titles/descriptions. It does not verify the
+   image visually or guarantee its scientific accuracy.
+6. Download the image and fit it to the projector, preserving labels and aspect
+   ratio. Unused space is black; transparent diagrams receive a white background.
+7. Save the source, creator, credit and license metadata alongside the image.
 
-```text
-optional microphone clip → OpenAI transcription ┐
-blank projector → camera snapshot ──────────────┤
-                                               ↓
-                         OpenAI vision → validated visual-plan JSON
-                                               ↓
-                  Pillow diagram OR optional OpenAI-generated illustration
-                                               ↓
-                            RGB frame → existing Pi projector server
-```
+Example: a biology textbook and speech about the cerebellum can lead to a
+cerebellum diagram. Queries and URLs are separate: the model cannot invent a
+URL for the downloader. This searches **Commons**, not all of Google Images.
+Search quality and coverage vary; an empty search leaves the display blank.
 
-The language model does not output millions of pixel values. It returns a title,
-short notes, and drawing instructions (text boxes, arrows, lines, rectangles,
-ellipses). Pillow renders these deterministically. With `--illustrations`, the
-model can request a separate Images API call; the resulting bitmap replaces the
-diagram while our renderer retains the readable title and notes. If that call
-fails, the diagram remains the fallback.
+## Install
 
-There is **no internet image retrieval** in this version. Illustrations are
-AI-generated and labeled as such; they are not sourced anatomy references.
-Diagram/illustration accuracy still needs human review. There is no automatic
-rotation or camera-to-projector registration: aim the projector at a clear wall,
-set its focus/keystone, and leave it fixed. Camera coordinates are not projector
-coordinates. The camera can look at the book while the projector points elsewhere.
-
-## Install on the Raspberry Pi
-
-Run from the repo root. If the existing projector server works, keep using it;
-do not start a second server on the same display/port.
+On the Pi, reuse system OpenCV:
 
 ```bash
 cd /home/jack/HackTheNorth2026
@@ -45,105 +29,72 @@ python3 -m venv --system-site-packages ambient_projector/.venv
 ambient_projector/.venv/bin/python -m pip install 'openai>=1.75,<3' 'Pillow>=10.1,<13'
 ```
 
-This reuses the Pi's system OpenCV. No local language model, GPU, or Torch is
-needed. For a Mac/Linux machine without system OpenCV, install the complete set:
+On Mac or a machine without system OpenCV:
 
 ```bash
 python3 -m venv ambient_projector/.venv
 ambient_projector/.venv/bin/python -m pip install -r ambient_projector/requirements.txt
 ```
 
-Set `OPENAI_API_KEY` in the shell that launches the program. Never commit the key.
-`.env` files are not automatically loaded. Cloud calls require an API account
-with billing and access to the configured models. Defaults:
+Set `OPENAI_API_KEY` locally before camera/context mode. Do not commit it. `.env`
+is not loaded automatically. Default vision model is `gpt-4.1-mini` (`--model`),
+transcription is `gpt-4o-mini-transcribe` (`--audio-model`). No Torch, matplotlib,
+local language model or image-generation API is required.
 
-| Job | Default model | Override |
-| --- | --- | --- |
-| Image and context → visual plan | `gpt-4.1-mini` | `--model` |
-| Optional speech → text | `gpt-4o-mini-transcribe` | `--audio-model` |
-| Optional illustration | `gpt-image-1` | `--image-model` |
-
-Overrides must support the corresponding API/features. Using the OpenAI SDK does
-not make every model interchangeable.
-
-## First test: no camera, key, or API charges
-
-```bash
-cd /home/jack/HackTheNorth2026
-ambient_projector/.venv/bin/python -m ambient_projector.app \
-  --scene ambient_projector/examples/brain.json --once
-```
-
-Open `/home/jack/HackTheNorth2026/ambient_projector/output/latest.png`.
-This example is a **manually authored concept map**, not evidence of a successful
-OpenAI call or a generated brain illustration. `latest.json` holds its plan.
-
-To send the example to an already-running Pi display:
+## Test web images without a camera or OpenAI key
 
 ```bash
 ambient_projector/.venv/bin/python -m ambient_projector.app \
-  --scene ambient_projector/examples/brain.json --once \
-  --projector-url http://127.0.0.1:8080
+  --query 'human brain anatomy diagram' --once
 ```
 
-If needed, start the repo's display process in another Pi terminal:
+Direct-query mode uses the first usable search result; it does not call OpenAI.
+On the Pi, the output is:
+
+- `/home/jack/HackTheNorth2026/ambient_projector/output/latest.png`
+- `/home/jack/HackTheNorth2026/ambient_projector/output/latest.json`
+- `/home/jack/HackTheNorth2026/ambient_projector/output/source.txt`
+
+`latest.json` records the query, chosen image URL, source page, selection method,
+author, credit, license and attribution metadata. `source.txt` is a readable copy.
+Check the linked source page for its complete reuse requirements and provide
+attribution when sharing or publicly presenting the image. We retain metadata
+but do not draw it over the image. Files are replaced each cycle, not accumulated.
+Use `--outdir /absolute/path` to choose another output location.
+
+## Camera → image → projector
+
+Start the existing Pi display if it is not already running (see
+`/home/jack/HackTheNorth2026/raspi/README.md` for pygame/HDMI setup):
 
 ```bash
 cd /home/jack/HackTheNorth2026
 python3 raspi/vec2projector.py --http 8080
 ```
 
-See `/home/jack/HackTheNorth2026/raspi/README.md` for pygame/HDMI setup. Use a
-clean dedicated display without HUD, grid, persistent vectors or other senders;
-black RGB frames do not erase separate vector overlays. Use `--width` and
-`--height` to match the actual HDMI resolution (default 1280×720).
-
-## Camera → OpenAI → projector
-
-First do one update:
+In another terminal:
 
 ```bash
 cd /home/jack/HackTheNorth2026
 ambient_projector/.venv/bin/python -m ambient_projector.app \
   --camera 0 --once \
-  --request 'Help me understand what I am reading. Use a useful diagram.' \
+  --request 'Show an educational image that helps explain what I am reading.' \
   --projector-url http://127.0.0.1:8080
 ```
 
-Then remove `--once` for recurring updates:
+Remove `--once` to repeat at the default `--interval 20`. Set `--width` and
+`--height` to match the projector mode (default 1280×720). Omit `--projector-url`
+for PNG-only previews. Use `--image /absolute/path/to/photo.jpg` instead of a live
+camera to test on a saved image.
 
-```bash
-ambient_projector/.venv/bin/python -m ambient_projector.app \
-  --camera 0 --interval 20 \
-  --projector-url http://127.0.0.1:8080
-```
+Use a dedicated display without other senders, HUD, grid, or persistent vector
+overlays. RGB blanking cannot erase a separate vector layer. Aim/focus/keystone
+are configured physically. No robot rotation or camera-to-projector registration
+is performed; the camera can face the book while the projector faces the wall.
 
-`--interval 20` is the minimum interval **between cycle starts**, not a guaranteed
-20-second response time. Cycles never overlap. Capture, audio, or image generation
-can take longer; the next cycle starts after completion with at least a 1-second
-pause. API timeout is 90 seconds per request, SDK retries are disabled, and errors
-wait until the next cycle instead of retrying in a tight loop.
+## Optional audio
 
-The program briefly blanks output while opening/warming the webcam. After capture,
-it restores the previous image while waiting for new guidance. The first cycle
-stays black until output is ready. A failed update clears the image so old advice
-is not left presented as current. Ctrl+C clears the projector; `--once` leaves the
-successful result visible. A disconnected projector cannot be remotely cleared.
-
-To test a saved image, omit the camera entirely:
-
-```bash
-ambient_projector/.venv/bin/python -m ambient_projector.app \
-  --image /home/jack/table-test.jpg --once \
-  --request 'Explain something useful about this scene.'
-```
-
-Omit `--projector-url` for PNG-only operation. Saved images should already be
-free of projected text; the program cannot undo illumination in an existing photo.
-
-## Add microphone context
-
-Microphone use is **off by default**. On Pi:
+Audio is off by default. On Pi:
 
 ```bash
 sudo apt-get install -y libportaudio2
@@ -151,80 +102,56 @@ ambient_projector/.venv/bin/python -m pip install 'sounddevice>=0.5,<1'
 ambient_projector/.venv/bin/python -m ambient_projector.app --list-audio-devices
 ```
 
-The system NumPy installed with OpenCV is sufficient. Elsewhere use
-`ambient_projector/requirements-audio.txt` and install PortAudio if your OS needs
-it (on macOS, `brew install portaudio`). Allow camera/microphone access in OS
-settings where required.
+Then choose the listed microphone index:
 
 ```bash
 ambient_projector/.venv/bin/python -m ambient_projector.app \
   --camera 0 --audio --audio-seconds 6 --audio-device 1 \
-  --interval 20 --illustrations \
-  --request 'Teach me a useful concept related to what I am reading aloud.' \
-  --projector-url http://127.0.0.1:8080
+  --interval 20 --projector-url http://127.0.0.1:8080
 ```
 
-Replace device `1` with the listed microphone index, or omit `--audio-device` to
-use the system default. Each cycle records a short mono clip, transcribes it,
-then captures an image. This is sampled audio, **not continuous listening or
-synchronized video/audio streaming**. Speak during the logged recording window.
-If capture/transcription fails, the cycle proceeds with camera context alone.
+Omit `--audio-device` for the default microphone. On other platforms install
+`requirements-audio.txt` and PortAudio as needed. Microphone errors fall back to
+camera-only context. Speech is sampled in short windows, not continuously; speak
+when the recording message appears. Audio is transcribed before the snapshot.
 
-## Illustrations and the biology demo
+## Timing, failures, and data
 
-Add `--illustrations` to allow image generation when the model requests it. Point
-the camera at a clearly readable biology page and say what concept you are
-studying, or supply it through `--request`. A successful cycle can project a brain
-illustration with short supplementary notes. Without the flag, it draws diagrams
-using the primitive vocabulary only.
+- Each cycle uses up to two vision/text requests (query and metadata selection),
+  plus optional transcription, Commons search and an image download. Cycles do
+  not overlap; 20 seconds is a minimum start-to-start interval, not a latency SLA.
+- OpenAI requests have a 90-second timeout and no SDK retries. Web requests have
+  a 20-second timeout; at most three candidate images are attempted. No image
+  generation is used by the live command.
+- Projection is briefly blank during camera capture. Previous output is restored
+  while processing. A failed update clears it. Ctrl+C clears; a successful
+  `--once` leaves its image visible. Network failures can prevent clearing.
+- Camera images and enabled microphone audio go to OpenAI. Raw inputs/transcripts
+  are not saved. The search query goes to Commons. Responses uses `store=False`;
+  this is not a claim about all provider retention policies.
+- Only Wikimedia HTTPS download hosts are accepted, including redirects. Downloads
+  are size-limited and decoded as images; no model-generated code/HTML is executed.
+- Each cycle is independent; no conversational memory or search caching yet.
+- The old `--scene examples/brain.json --once` remains as an explicit offline
+  renderer test. It is not the default live experience. `--illustrations` and
+  `--image-model` are no longer CLI options.
 
-Image generation adds latency and cost; it can take much longer than 20 seconds.
-Start with `--once --illustrations` for a predictable demo. For repetitive operation,
-try `--interval 60`. The app performs no caching or deduplication: each cycle can
-make one vision call, one transcription call, and one image call when enabled.
-There is no cross-cycle conversation memory; every cycle uses its current inputs.
-
-## Data and outputs
-
-- Camera JPEGs and enabled microphone audio are sent to OpenAI. Frames are
-  resized to at most 1600 pixels per side and encoded without source metadata.
-- Raw camera/audio inputs and transcripts stay in memory; they are not saved by
-  this program. The current visual plan and PNG are saved under ignored `output/`.
-- `store=False` is set for Responses calls; this does not describe all provider
-  retention policies for every endpoint.
-- `--outdir /absolute/path` changes the output folder. Each cycle replaces
-  `latest.png` and `latest.json`, rather than filling the Pi with image history.
-- Model output is validated before rendering. No generated Python, HTML, URLs,
-  shell commands, or executable instructions are evaluated.
-
-## Files and tests
-
-| File | Responsibility |
-| --- | --- |
-| `app.py` | CLI, update loop, dependency composition, failure handling |
-| `devices.py` | Webcam, optional microphone, projector HTTP output |
-| `ai.py` | OpenAI Responses, transcription and image generation calls |
-| `scene.py` | Validated visual-plan data and JSON schema |
-| `render.py` | Deterministic text/shapes/illustration-to-RGB renderer |
+## Tests and files
 
 ```bash
 ambient_projector/.venv/bin/python -m unittest discover -s ambient_projector/tests -v
 ```
 
-Tests run offline with fake API/device responses. They check schema validation,
-rendering at multiple resolutions, image preparation, audio/image API paths,
-blank/capture/display ordering, fallback behavior, and exact projector RGB bytes.
-They do **not** verify cloud account access, microphone support, camera hardware,
-physical projection, or scientific correctness. Perform the single-update live
-command before claiming a working end-to-end hardware demo.
+Offline tests cover context→query→search→download→RGB, source metadata, invalid
+selection, URL restrictions, failed-download fallback, transparency, aspect ratio,
+API shapes, audio fallback and display bytes. The direct-query brain example has
+also been run against live Commons search and download. Hardware and cloud calls
+still depend on your device/network/key; offline tests do not prove those work.
 
-Troubleshooting: camera errors → close other webcam processes and try `--camera 1`;
-audio errors → list/select devices; HTTP display errors → check
-`python3 raspi/sender.py health`; API failures → check the key, quota and access to
-the selected model; invalid layout → retry with a request for a simpler diagram.
-The bundled font is intended for short English text, not general multilingual typography.
+`app.py` composes the loop, `ai.py` handles model calls, `web_images.py` searches,
+downloads and fits images, and `devices.py` handles capture/display. `scene.py`
+and `render.py` support the retained offline diagram example only in the CLI.
 
-Official references: [vision inputs](https://developers.openai.com/api/docs/guides/images-vision),
-[structured outputs](https://developers.openai.com/api/docs/guides/structured-outputs),
-[transcription](https://developers.openai.com/api/docs/guides/speech-to-text),
-[image generation](https://developers.openai.com/api/docs/guides/image-generation).
+References: [Commons image metadata API](https://www.mediawiki.org/wiki/API:Imageinfo),
+[OpenAI image inputs](https://developers.openai.com/api/docs/guides/images-vision),
+[structured output](https://developers.openai.com/api/docs/guides/structured-outputs).
