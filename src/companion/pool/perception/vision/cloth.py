@@ -190,8 +190,14 @@ def find_cloth_quad(image: np.ndarray) -> np.ndarray | None:
     if not MIN_AREA_FRACTION <= area / filled.size <= MAX_AREA_FRACTION:
         return None
 
+    # Every boundary pixel, not the run-length summary. `CHAIN_APPROX_SIMPLE`
+    # collapses a straight run to its two endpoints, which is exactly what the
+    # cushion lines are: on one real frame it left the two short sides with 6
+    # and 14 points, too few to fit, while the long sides kept 57-71 only
+    # because the pockets break them up. `refine_cloth_quad` fits those lines
+    # from this contour, so it needs the run itself.
     contours, _ = cv2.findContours(filled, cv2.RETR_EXTERNAL,
-                                   cv2.CHAIN_APPROX_SIMPLE)
+                                   cv2.CHAIN_APPROX_NONE)
     if not contours:
         return None
     contour = max(contours, key=cv2.contourArea)
@@ -201,7 +207,7 @@ def find_cloth_quad(image: np.ndarray) -> np.ndarray | None:
         return None
     if not _is_plausible(quad, contour):
         return None
-    return refine_cloth_quad(order_quad(quad), image)
+    return refine_cloth_quad(order_quad(quad), image, contour)
 
 
 def _quad_from_contour(contour: np.ndarray) -> np.ndarray | None:
@@ -243,7 +249,8 @@ def _is_plausible(quad: np.ndarray, contour: np.ndarray) -> bool:
     return abs(cv2.contourArea(contour)) / quad_area >= MIN_FILL
 
 
-def refine_cloth_quad(quad: np.ndarray, image: np.ndarray) -> np.ndarray:
+def refine_cloth_quad(quad: np.ndarray, image: np.ndarray,
+                     contour: np.ndarray | None = None) -> np.ndarray:
     """Sharpen the corners by re-fitting the four cushion lines.
 
     The corners are the least reliable part of the outline - every one of
@@ -253,7 +260,28 @@ def refine_cloth_quad(quad: np.ndarray, image: np.ndarray) -> np.ndarray:
     by intersecting neighbouring lines. This is the same argument as for the
     paper's drawn-on pockets, and it is what puts the corner where the
     cushions would meet rather than where the pocket cut begins.
+
+    The fit is over the region's *boundary* where one is supplied, not over
+    a band of its interior. A band is centred on the quad it is given, so
+    whatever bias that quad already carries decides which pixels vote, and
+    the fit inherits it: measured across the recorded frames, the incoming
+    quad sat 16-47 px outside the cloth on every side and the band fit moved
+    it about 4 px, leaving the drawn edge out on the rail. The boundary does
+    not move when the quad does.
     """
+    points = None
+    if contour is not None:
+        boundary = np.asarray(contour).reshape(-1, 2).astype(np.float64)
+        if len(boundary) >= 200:
+            points = boundary
+    if points is None:
+        return _refine_from_interior(quad, image)
+    return _refine_from_points(quad, points, outer_percentile=45.0,
+                               band_frac=0.10, min_points=25)
+
+
+def _refine_from_interior(quad: np.ndarray, image: np.ndarray) -> np.ndarray:
+    """The original interior-band fit, for callers with no contour to hand."""
     mask = _largest_filled_component(cloth_mask(image))
     if mask is None:
         return quad
@@ -304,6 +332,61 @@ def refine_cloth_quad(quad: np.ndarray, image: np.ndarray) -> np.ndarray:
     # shape any more; keep the original rather than trusting it.
     diagonal = float(np.linalg.norm(quad[2] - quad[0]))
     if float(np.abs(refined - order_quad(quad)).max()) > 0.15 * diagonal:
+        return quad
+    return refined
+
+
+def _refine_from_points(quad: np.ndarray, points: np.ndarray, *,
+                        outer_percentile: float, band_frac: float,
+                        min_points: int) -> np.ndarray:
+    """Re-cut the corners by fitting each cushion to the boundary points.
+
+    For each side, the boundary points lying near it and along its middle
+    stretch are collected, and the *outermost* fraction of those is what the
+    line is fitted to. Taking the outer fraction is what separates the
+    cushion from the pockets: a pocket cuts the boundary inward, so its
+    points sit well inside the cushion's own run and drop out of the
+    percentile rather than tilting the line, and no assumption about where
+    the pockets are is needed to exclude them.
+    """
+    quad = order_quad(np.asarray(quad, np.float64))
+    centre = quad.mean(axis=0)
+
+    lines: list[tuple[np.ndarray, np.ndarray]] = []
+    for i in range(4):
+        a, b = quad[i], quad[(i + 1) % 4]
+        edge = b - a
+        length = float(np.linalg.norm(edge))
+        if length < 20.0:
+            return quad
+        direction = edge / length
+        normal = np.array([-direction[1], direction[0]])
+        if float((centre - a) @ normal) < 0.0:
+            normal = -normal  # points into the table
+
+        offset = (points - a) @ normal
+        along = (points - a) @ direction
+        near = ((np.abs(offset) < band_frac * length)
+                & (along > 0.20 * length) & (along < 0.80 * length))
+        if int(near.sum()) < min_points:
+            return quad
+        candidates = points[near]
+        outer = candidates[
+            offset[near] <= np.percentile(offset[near], outer_percentile)]
+        if len(outer) < 8:
+            return quad
+        lines.append(_fit_line(outer))
+
+    corners = []
+    for i in range(4):
+        point = _intersect_lines(lines[i - 1], lines[i])
+        if point is None or not np.all(np.isfinite(point)):
+            return quad
+        corners.append(point)
+    refined = order_quad(np.array(corners, np.float64))
+
+    diagonal = float(np.linalg.norm(quad[2] - quad[0]))
+    if float(np.abs(refined - quad).max()) > 0.15 * diagonal:
         return quad
     return refined
 

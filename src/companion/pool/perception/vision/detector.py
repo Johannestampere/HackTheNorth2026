@@ -161,7 +161,40 @@ MIN_SEPARATION_R = 1.9
 # an 8 ball sitting on the edge of the table. The cost is that a ball hanging
 # in the jaws is not placed - which is the reading a pool tool wants anyway,
 # since it is on its way in.
+#
+# The disc is only the hole at the cushion line. Mouths open inward from
+# there, and growing this radius until it reaches them swallows real balls
+# that are merely near a cushion first. `_search_region` therefore also cuts
+# a slot along each pocket's inward axis; see `MOUTH_ALONG_R`.
 POCKET_CLEARANCE_R = 2.5
+
+# The mouth of a pocket, as a slot rather than a disc. `along` is half the
+# opening's width, `depth` is how far the cut reaches into the cloth, both
+# in ball radii from the cushion-line hole. A ball on the cloth beside the
+# pocket is off-axis; a ball in the middle of the table on the pocket's
+# centreline is too deep. Measured: empty mouths and balls in the jaws sat
+# at along 0.96-1.79 r and depth 2.8-6.3 r, while every real ball on the
+# cloth was either off-axis by more than 3 r or deeper than 8 r.
+MOUTH_ALONG_R = 2.4
+MOUTH_DEPTH_R = 7.0
+
+# How sure the network must be that a crop is not a ball before its opinion
+# is allowed to remove a candidate. High, because the cost is asymmetric: a
+# dropped ball is a hole in the reading the game rules cannot recover from,
+# while a kept pocket is one spurious ball the counts already warn about. See
+# `_drop_non_balls`.
+#
+# 0.80 is where the recorded frames agree: every `none` the network emitted
+# was a pocket mouth (0.816-1.00) and no real ball drew one. 0.85 left the
+# side pocket on the full-rack fixture in, at 0.816, when the stored 2:1
+# spec stretched the crop just enough to shake the model's confidence.
+NOT_A_BALL_CONFIDENCE = 0.80
+
+# How sure the network must be that a crop is the 8 before that crop is
+# considered for it alongside the ones the measurements nominate. It only ever
+# adds a candidate; which one wins is still decided by `_eight_score`.
+LEARNED_EIGHT_CONFIDENCE = 0.90
+
 
 # A ball resting against a cushion still has its centre a full radius inside
 # the cloth, so that is where the search has to stop. Searching the whole
@@ -236,8 +269,11 @@ PAIR_MIN_RIM_MARGIN = 0.05
 # self-referential and inverts: a uniformly dark ball divides a dark body by an
 # equally dark 90th percentile and reads as light, so the 8 was only ever found
 # when a gloss highlight happened to be sitting on it. It went missing on the
-# first frame where one was not.
-EIGHT_BODY_DARKNESS = 0.20   # median body lightness over the table's white
+# first frame where one was not. 0.22 is where the recorded full rack's 8
+# (0.207) is a candidate without a model, now that pocket mouths are excluded
+# by geometry rather than by this cut - at 0.20 the 8 was not nominated and a
+# machine with no classifier reported no 8 at all.
+EIGHT_BODY_DARKNESS = 0.22   # median body lightness over the table's white
 EIGHT_BODY_CHROMA = 12.0
 
 # The cue ball. There is exactly one, so the test is comparative: the whitest
@@ -493,6 +529,7 @@ def detect_balls(image: np.ndarray, homography: Homography, *,
         stats = _measure(field, cx, cy, r)
         if _is_a_ball(stats):
             found.append((cx, cy, stats))
+    found = _drop_non_balls(view.image, found, r)
     kinds = _classify_with_optional_vlm(view.image, found, r, use_vlm)
     if memory is not None:
         kinds = _recall_better_views(view, found, kinds, radius_mm, memory)
@@ -582,15 +619,16 @@ def _colour_field(rect: np.ndarray, r: float) -> _ColourField:
 def _search_region(view: RectifiedView, r: float) -> np.ndarray:
     """Where a ball's centre is allowed to be: cloth, away from the pockets.
 
-    Bounded three ways, because each catches something the others do not.
+    Bounded four ways, because each catches something the others do not.
     The measured rectangle, inset by one radius, excludes the room and the
     cushions - a ball touching a cushion still has its centre a full radius
     in, so the rest of the rectangle is not somewhere a centre can be. The
     cloth mask excludes the rail, which matters because the fitted corners can
     sit a little outside the true cloth and the lit edge of a rail scores like
-    a row of touching balls. The pocket discs exclude the mouths, which are
-    holes in the cloth of roughly a ball's size and would be found as black
-    balls.
+    a row of touching balls. The pocket discs exclude the holes at the
+    cushion line. The mouth slots exclude the openings that cut inward from
+    there, which a disc at the cushion line cannot reach without first
+    eating balls that rest against a rail.
     """
     region = np.zeros(view.image.shape[:2], np.float32)
     inset = CUSHION_CLEARANCE_R * r / view.px_per_mm
@@ -608,7 +646,42 @@ def _search_region(view: RectifiedView, r: float) -> np.ndarray:
     for xy in holes_mm().values():
         cv2.circle(region, _ipt(view.mm_to_px(*xy)),
                    int(POCKET_CLEARANCE_R * r), 0.0, -1)
+    _paint_pocket_mouths(region, view, r)
     return region
+
+
+def _paint_pocket_mouths(region: np.ndarray, view: RectifiedView,
+                         r: float) -> None:
+    """Cut each pocket's inward opening out of the search region, in place.
+
+    The hole coordinates sit on the cushion line. The mouths themselves open
+    from there into the cloth, which is why a disc at `POCKET_CLEARANCE_R`
+    never reaches them without first eating balls that rest against a rail.
+    A slot along the inward axis does: it is wide enough for the opening and
+    long enough to cover a mouth that sits several radii in, and it misses a
+    ball that is merely beside the pocket because that ball is off-axis.
+    """
+    radius_mm = r / view.px_per_mm
+    centre = np.array([sheet_w_mm() / 2.0, sheet_h_mm() / 2.0], np.float64)
+    along = MOUTH_ALONG_R * radius_mm
+    depth = MOUTH_DEPTH_R * radius_mm
+    for xy in holes_mm().values():
+        hole = np.array(xy, np.float64)
+        inward = centre - hole
+        length = float(np.linalg.norm(inward))
+        if length < 1e-6:
+            continue
+        inward = inward / length
+        tangent = np.array([-inward[1], inward[0]])
+        back = hole - radius_mm * inward
+        front = hole + depth * inward
+        corners = np.array([
+            _ipt(view.mm_to_px(*(back + along * tangent))),
+            _ipt(view.mm_to_px(*(back - along * tangent))),
+            _ipt(view.mm_to_px(*(front - along * tangent))),
+            _ipt(view.mm_to_px(*(front + along * tangent))),
+        ], np.int32)
+        cv2.fillConvexPoly(region, corners, 0.0)
 
 
 def _ipt(xy: tuple[float, float]) -> tuple[int, int]:
@@ -639,12 +712,16 @@ def _find_centres(delta: np.ndarray, region: np.ndarray,
                                                  SURROUND_OUTER_R * r))
     response = (centre - surround) * region
 
-    # Twice the separation across, because a (span x span) dilation compares
-    # each pixel against only +/- span/2. Sized to the separation itself -
-    # which is what it was - the test enforced half of it, and two peaks a
-    # whole ball apart both came through as "local" maxima.
-    span = int(2.0 * MIN_SEPARATION_R * r) | 1
-    local_max = cv2.dilate(response, np.ones((span, span), np.uint8))
+    # A tight peak test; separation is the greedy pass below. A window sized
+    # to `MIN_SEPARATION_R` collapsed two touching balls into one whenever
+    # the stronger ball's skirt outranked the weaker ball's centre inside
+    # that window - measured on a clustered live frame, the 12 scored 35.8
+    # against a cut at 22 and sat 3 r from its neighbour, but never became a
+    # local max because the 2-ball's slope 40 px away was still higher.
+    # Half a radius is enough to ignore speckle and small enough that a bump
+    # on a neighbour's skirt still counts as its own peak.
+    peak_span = max(3, int(0.5 * r) | 1)
+    local_max = cv2.dilate(response, np.ones((peak_span, peak_span), np.uint8))
     ys, xs = np.nonzero((response >= local_max - 1e-6)
                         & (response > MIN_BALL_RESPONSE))
 
@@ -777,6 +854,47 @@ def _learned_opinion(rectified: np.ndarray,
         print(f"note: ball classifier failed ({exc}); using measurements",
               file=sys.stderr)
         return None
+
+
+def _drop_non_balls(rectified: np.ndarray,
+                    found: list[tuple[float, float, dict]],
+                    r: float) -> list[tuple[float, float, dict]]:
+    """Discard candidates the network confidently says are not balls.
+
+    `_is_a_ball` rejects hardware on colour alone, which cannot see a pocket:
+    a mouth is a ball-sized hole that is dark and colourless, which is also a
+    fair description of the 8. The network can see it, because it was trained
+    with a `none` class on crops cut from this very pipeline, and it is the
+    only witness here that has ever been shown one.
+
+    This matters more than it used to. A mouth only stayed out of the reading
+    while the fitted quad sat inside the true cloth and cropped the mouths out
+    of the rectified view before anything looked at them; with the quad on the
+    cushion line they are inside it, and two of them came back as balls on a
+    full rack. Excluding them by geometry instead means growing a clearance
+    disc centred on the cushion line until it reaches a mouth that opens
+    inward from there, and that disc reaches real balls resting near a cushion
+    first - measured, it cost a correctly-read rack before it caught either
+    mouth.
+
+    Only a confident `none` is acted on, and only to drop a candidate: the
+    network is never allowed to *name* a ball here, which stays the job of
+    `_classify` and the arithmetic about what a pool set contains. Measured
+    across the recorded frames, every `none` above this threshold was a pocket
+    mouth (0.816-1.00) and no real ball drew one. A mouth the network is
+    unsure about is still a job for the mouth slots in `_search_region`.
+    """
+    if not found:
+        return found
+    learned = _learned_opinion(rectified, found, r)
+    if learned is None:
+        return found
+    keep = [candidate for candidate, call in zip(found, learned)
+            if not (call[0] == "none" and call[1] >= NOT_A_BALL_CONFIDENCE)]
+    # All of them cannot be pockets. A reading that says so is a model that
+    # has lost its footing - a badly scaled crop, a frame it cannot read -
+    # and dropping the whole table on its word is worse than keeping it.
+    return keep if keep else found
 
 
 def _classify_with_optional_vlm(rectified: np.ndarray,
@@ -1000,6 +1118,17 @@ def _classify(found: list[tuple[float, float, dict]],
               if s["rim_white"] < STRIPE_RIM_WHITE
               and s["body_darkness"] <= EIGHT_BODY_DARKNESS
               and s["body_chroma"] <= EIGHT_BODY_CHROMA]
+    # The network gets a say in who is even considered, for the same reason it
+    # decides stripe from solid: the darkness gate is still a close call under
+    # a different light, and a confident `eight` from the network is better
+    # evidence about which crop looks like the 8 than a threshold a dark
+    # stripe can also clear. Mouths used to win this comparison by being
+    # blacker than any ball; they are excluded upstream in `_search_region`.
+    if learned is not None:
+        eights += [i for i, call in enumerate(learned)
+                   if call[0] == "eight" and call[1] >= LEARNED_EIGHT_CONFIDENCE
+                   and i not in eights
+                   and found[i][2]["rim_white"] < STRIPE_RIM_WHITE]
     if eights:
         best = min(eights, key=lambda i: _eight_score(found[i][2]))
         kinds[best] = ("eight", _confidence("eight", found[best][2]))

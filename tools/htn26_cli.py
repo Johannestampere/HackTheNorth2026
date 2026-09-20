@@ -28,6 +28,7 @@ from companion.pool.perception.vision.table_spec import (DEFAULT_REFERENCE_SIDE,
                                  sheet_w_mm)
 from companion.pool.perception.vision.detector import (BALL_RADIUS_FRAC, Ball, BallMemory, ball_radius_mm,
                           describe_inconsistency, detect_balls)
+from companion.pool.perception.vision.ball_scale import measure_ball_scale
 from companion.pool.perception.vision.envutil import load_dotenv
 from companion.pool.perception.vision.marks import MARK_RADIUS_MM, Mark, detect_marks
 from companion.pool.perception.vision.overlay import (ball_counts, ball_summary, draw_overlay,
@@ -42,6 +43,10 @@ _LIVE_REFERENCE: tuple[float | None, str, float | None] = (
 
 # A ball's radius as a fraction of the surface's long side, from the CLI.
 _BALL_RADIUS_FRAC = BALL_RADIUS_FRAC
+
+# The table's shape (short side / long side) when it is known rather than
+# estimated, set by `--geometry`. See `measure_sheet`.
+_KNOWN_RATIO: float | None = None
 
 # Offline `--vlm` only. Live B is always OpenCV; live V is the model.
 _USE_VLM = False
@@ -94,6 +99,57 @@ def export(grid: Grid, result: FrameResult, outdir: Path) -> None:
         print(f"note: {note}")
 
 
+def _ratio_from_geometry(path: Path) -> float | None:
+    """The table's short/long ratio from a geometry document, or None.
+
+    Read through the contract's own loader rather than by pulling fields out
+    of the JSON, so the overlay cannot disagree with the planner about what
+    the file says.
+    """
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+        from companion.pool.contracts.serialization import load_geometry
+
+        geometry = load_geometry(path)
+    except Exception as error:
+        print(f"note: could not read {path}: {error}", file=sys.stderr)
+        return None
+    long_side = max(geometry.length, geometry.width)
+    short_side = min(geometry.length, geometry.width)
+    if long_side <= 0.0 or short_side <= 0.0:
+        return None
+    return short_side / long_side
+
+
+def _spec_from_ratio(ratio: float, reference: float | None,
+                     reference_side: str,
+                     height_mm: float | None) -> TableSpec:
+    """A spec with this shape, scaled by whatever real measurement there is.
+
+    Shared by the estimated and the known-shape paths so the two cannot drift
+    apart in how they apply the caller's scale.
+    """
+    if reference is None:
+        # No measurement offered, so claim no units. Normalise on the longer
+        # side: width x height with the larger of the two at 1.0.
+        if ratio >= 1.0:
+            return TableSpec(1.0 / ratio, 1.0, DEFAULT_UNITS)
+        return TableSpec(1.0, ratio, DEFAULT_UNITS)
+    if height_mm is not None:
+        # Both dimensions given: nothing is estimated at all.
+        return (TableSpec(reference, height_mm, "mm")
+                if reference_side != "height"
+                else TableSpec(height_mm, reference, "mm"))
+    if reference_side == "height":
+        return TableSpec(reference / ratio, reference, "mm")
+    if reference_side == "long":
+        # Scale the longer side, whichever it turns out to be.
+        if ratio >= 1.0:
+            return TableSpec(reference / ratio, reference, "mm")
+        return TableSpec(reference, reference * ratio, "mm")
+    return TableSpec(reference, reference * ratio, "mm")
+
+
 def measure_sheet(frames: list[np.ndarray],
                   reference: float | None = None,
                   reference_side: str = "long",
@@ -112,6 +168,27 @@ def measure_sheet(frames: list[np.ndarray],
     if not quads:
         return None
     shape = frames[0].shape
+
+    # A shape supplied by the caller is a measurement of the equipment, and it
+    # outranks anything this frame can say about it. That is not a shortcut:
+    # recovering the ratio from one view needs the two vanishing points to sit
+    # near enough the image to be located, and a camera looking down at a
+    # table puts them thousands of pixels outside it. Measured across the
+    # recorded frames of one table, conditioning never rose above 0.14 and the
+    # ratio it produced swung between 0.55 and 0.88 - for a table that does
+    # not change shape. A number measured once with a tape does not swing.
+    if _KNOWN_RATIO is not None:
+        spec = _spec_from_ratio(_KNOWN_RATIO, reference, reference_side,
+                                height_mm)
+        set_active_spec(spec)
+        _LAST_MEASUREMENT.update(
+            focal=None, confidence=1.0, focal_used=False,
+            measured_both=height_mm is not None, frames=len(quads),
+            ratio=_KNOWN_RATIO, conditioning=max(
+                focal_conditioning(q, (shape[1] / 2.0, shape[0] / 2.0))
+                for q in quads),
+            shape_is_known=True)
+        return spec
 
     # The focal length is one fixed number the whole burst measures, so pool
     # it across frames and weight by conditioning. A single near-straight-on
@@ -144,28 +221,7 @@ def measure_sheet(frames: list[np.ndarray],
 
     ratio = float(np.median(ratios))  # height / width
 
-    if reference is None:
-        # No measurement offered, so claim no units. Normalise on the longer
-        # side: width x height with the larger of the two at 1.0.
-        if ratio >= 1.0:
-            spec = TableSpec(1.0 / ratio, 1.0, DEFAULT_UNITS)
-        else:
-            spec = TableSpec(1.0, ratio, DEFAULT_UNITS)
-    elif height_mm is not None:
-        # Both dimensions given: nothing is estimated at all.
-        spec = (TableSpec(reference, height_mm, "mm")
-                if reference_side != "height"
-                else TableSpec(height_mm, reference, "mm"))
-    elif reference_side == "height":
-        spec = TableSpec(reference / ratio, reference, "mm")
-    elif reference_side == "long":
-        # Scale the longer side, whichever it turns out to be.
-        if ratio >= 1.0:
-            spec = TableSpec(reference / ratio, reference, "mm")
-        else:
-            spec = TableSpec(reference, reference * ratio, "mm")
-    else:
-        spec = TableSpec(reference, reference * ratio, "mm")
+    spec = _spec_from_ratio(ratio, reference, reference_side, height_mm)
     set_active_spec(spec)
     _LAST_MEASUREMENT.update(focal=focal, confidence=confidence,
                              focal_used=trusted is not None,
@@ -193,6 +249,13 @@ def _report_measurement(spec: TableSpec | None, frames: list[np.ndarray],
               f"({reference_side} side pinned to {reference:.1f} mm)")
 
     thing = "table" if active_surface() == "table" else "sheet"
+    if _LAST_MEASUREMENT.get("shape_is_known"):
+        conditioning = float(_LAST_MEASUREMENT.get("conditioning") or 0.0)
+        print(f"  shape taken from the stored geometry, not estimated "
+              f"(this view's conditioning was {conditioning:.0%}, and the "
+              f"estimate is only meaningful above "
+              f"{MIN_SHAPE_CONFIDENCE:.0%})")
+        return
     if _LAST_MEASUREMENT.get("measured_both"):
         print("  both dimensions measured by hand - nothing was estimated")
         return
@@ -452,8 +515,40 @@ def _detect_balls_and_export(frame: np.ndarray, grid: Grid,
     if problem:
         for line in _wrap(problem, 72):
             print(f"  ! {line}")
+    _report_ball_scale(frame, grid)
     export_balls(frame, grid, result, balls, outdir)
     return balls
+
+
+def _report_ball_scale(frame: np.ndarray, grid: Grid) -> None:
+    """Measure the ball radius from this frame and print what it says.
+
+    `live_scan.py` runs this to correct the *planner's* geometry, because its
+    blocking test compares a ball separation against `2 * ball_radius` and a
+    radius half the truth calls a blocked lane clear. Here there is no planner
+    to correct, so the measurement is reported and nothing else: it is the
+    number to carry over to the fixture when this table's readings look wrong.
+
+    It deliberately does not re-run detection at the measured radius. Both
+    classifiers were calibrated around the prior - the rim annulus reaches a
+    real ball's shadowed edge rather than its bright interior, and the CNN's
+    training crops were cut from this pipeline at that same prior - so a
+    correctly-sized crop is a domain neither has seen. Re-detecting at the
+    measured value kept the positions and destroyed the stripe/solid call.
+    """
+    scale = measure_ball_scale(frame, grid.homography,
+                               prior_frac=_BALL_RADIUS_FRAC)
+    if scale is None:
+        print(f"  ball radius: not measurable on this frame; the detector's "
+              f"assumed {_BALL_RADIUS_FRAC:.4f} of the long side stands")
+        return
+    print(f"  {scale.describe()}")
+    if not scale.converged:
+        print("  ! the radius estimate had not settled; treat any blocking "
+              "call made from it as provisional")
+    if scale.spread > 0.20:
+        print(f"  ! balls disagree about their own size by {scale.spread:.0%}; "
+              f"check the lock and the lighting")
 
 
 def export_balls(frame: np.ndarray, grid: Grid, result: FrameResult,
@@ -572,6 +667,8 @@ def _preview_frame(frame: np.ndarray) -> tuple[np.ndarray, Grid | None]:
     if found < 6:
         _banner(canvas, f"{found}/6 pockets in view - move the camera back",
                 (0, 140, 220))
+    elif _KNOWN_RATIO is not None:
+        _banner(canvas, "ready - hold still to lock", (0, 170, 0))
     elif confidence < MIN_SHAPE_CONFIDENCE:
         # The shape, not the detection, is what is uncertain. Name the fix
         # precisely: the usual cause is tilt about one axis only, where one
@@ -582,7 +679,10 @@ def _preview_frame(frame: np.ndarray) -> tuple[np.ndarray, Grid | None]:
     else:
         _banner(canvas, "ready - hold still to lock", (0, 170, 0))
 
-    bar = f"shape confidence {confidence:.0%}"
+    if _KNOWN_RATIO is not None:
+        bar = f"shape {_KNOWN_RATIO:.4f} from stored geometry"
+    else:
+        bar = f"shape confidence {confidence:.0%}"
     focal = _LAST_MEASUREMENT.get("focal")
     if focal:
         bar += f"   focal {focal:.0f}px"
@@ -654,6 +754,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--frames", type=int, default=DEFAULT_FRAMES,
                     help="frames to median over when locking")
     ap.add_argument("--outdir", type=Path, default=DEFAULT_OUTDIR)
+    ap.add_argument("--geometry", type=Path,
+                    default=Path(__file__).resolve().parent.parent
+                    / "fixtures/table_geometry.json",
+                    help="table geometry to take the SHAPE from, instead of "
+                         "estimating it from the view. This is the same file "
+                         "the planner reads, so the overlay shows the table "
+                         "the planner is acting on. Pass --measure-shape to "
+                         "estimate it from the camera instead.")
+    ap.add_argument("--measure-shape", action="store_true",
+                    help="estimate the table's shape from the view rather "
+                         "than reading it from --geometry. Only meaningful "
+                         "from an oblique view: see the conditioning note.")
     ap.add_argument("--require-all-holes", action="store_true",
                     help="fail instead of reporting a hole as missing")
     ap.add_argument("--reference-mm", type=float, default=None, dest="reference",
@@ -694,9 +806,20 @@ def main(argv: list[str] | None = None) -> int:
 
     set_active_surface(args.surface)
 
-    global _LIVE_REFERENCE, _BALL_RADIUS_FRAC, _USE_VLM
+    global _LIVE_REFERENCE, _BALL_RADIUS_FRAC, _USE_VLM, _KNOWN_RATIO
     _LIVE_REFERENCE = (args.reference, args.reference_side,
                        args.height_mm)
+
+    # The shape comes from the stored geometry unless the caller asks for it
+    # to be measured. A table's proportions are a property of the equipment,
+    # measured once; this view cannot recover them (see `measure_sheet`), and
+    # reading them from the file the planner already reads is what keeps the
+    # overlay and the plan describing the same table.
+    if args.surface == "table" and not args.measure_shape:
+        _KNOWN_RATIO = _ratio_from_geometry(args.geometry)
+        if _KNOWN_RATIO is None:
+            print(f"note: no usable geometry at {args.geometry}; measuring "
+                  f"the shape from the view instead", file=sys.stderr)
     if args.ball_radius_frac <= 0.0:
         print("error: --ball-radius-frac must be positive", file=sys.stderr)
         return 2
