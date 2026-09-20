@@ -113,6 +113,48 @@ The shipped `fixtures/captures/synthetic.json` exercises file loading only —
 it is a drawn schematic, not a photograph of cloth, and is not a useful
 accuracy benchmark.
 
+## Development tools
+
+`tools/` holds the standalone utilities the pipeline was built with. They are
+not part of the stage pipeline - `companion.app` remains the entry point -
+but they are how the detector gets debugged and retrained:
+
+| Tool | What it is for |
+| --- | --- |
+| `htn26_cli.py` | The original CLI: live preview, or a saved image, writing the annotated overlay, the rectified view and an x/y graph. The fastest way to see *why* a frame read the way it did. |
+| `capture_crops.py` | Collect and hand-label ball crops from the camera, into `data/local/crops/`. |
+| `eval_baseten.py` | Score classification on a saved frame against hand labels. |
+| `smoke_baseten.py` | One-crop check that the hosted model is reachable. |
+
+```sh
+PYTHONPATH=src python3.11 tools/htn26_cli.py   --image data/local/fixtures/real_table_balls.png   --outdir artifacts/debug --surface table
+```
+
+The drawing they rely on lives in `vision/overlay.py`, beside the detector
+whose output it renders.
+
+## Tests
+
+`tests/perception/` holds 99 tests: the 90 ported with the pipeline plus 9
+covering the contract boundary.
+
+The synthetic ones need no camera and no recorded data - a sheet is rendered,
+warped through a known perspective and degraded with a lighting ramp, blur
+and noise, then measured. Those run anywhere.
+
+The real-table ones read recorded frames from the ignored
+`data/local/fixtures/`, and **skip** when it is absent rather than failing on
+a machine that does not have the images. A skipped test is honest about what
+was not checked.
+
+## The original project's notes
+
+The standalone project's README is kept verbatim at
+[perception-pipeline-reference.md](perception-pipeline-reference.md). It
+carries the detail this guide summarises: why the cloth is found by
+saturation, what each accuracy figure was measured against, the failure
+modes, and the troubleshooting notes.
+
 ## Dependencies
 
 `opencv-contrib-python` and `numpy`, in the `perception` extra. Torch is
