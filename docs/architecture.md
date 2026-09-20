@@ -36,7 +36,7 @@ src/companion/
   routing/                     Tool selection enum, router protocol, LLM stub
   pool/
     contracts/                 Geometry, table state, shot plan, outcomes, JSON codecs
-    perception/                Teammate 1: interface.py + service.py
+    perception/                Teammate 1: interface.py + service.py + vision/ (OpenCV pipeline)
     planning/                  Teammate 2: interface.py + service.py
     projection/                Teammate 3: interface.py + service.py + pixel/target models
     pipeline.py                Single-batch stage composition and handoff validation
@@ -65,7 +65,7 @@ ShotRenderer.render(plan: ShotPlan, target: ProjectionTarget) -> ProjectionFrame
 TaskRouter.route(first_capture: CameraCapture) -> RoutingDecision
 ```
 
-The concrete `PooltoolPlanner` implements Pooltool-based direct-pot search. `ProjectionService` renders calibrated guidance, with explicit HTTP output via `HttpProjector`. `PerceptionService` and `LLMRouter` remain unimplemented. No subclass declaration is required to satisfy a protocol. Shared contracts and pipeline behavior are implemented.
+The concrete `PooltoolPlanner` implements Pooltool-based direct-pot search. `ProjectionService` renders calibrated guidance, with explicit HTTP output via `HttpProjector`. `PerceptionService` measures the cloth and reads the balls with a classical-CV pipeline in `perception/vision/`, for a roughly overhead capture; oblique-view depth and multi-view fusion are not implemented (see [perception.md](perception.md)). `LLMRouter` remains unimplemented. No subclass declaration is required to satisfy a protocol. Shared contracts and pipeline behavior are implemented.
 
 ## Pool orchestration
 

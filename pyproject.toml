@@ -12,6 +12,10 @@ dependencies = []
 
 [project.optional-dependencies]
 planning = ["pooltool-billiards==0.6.0"]
+# Perception reads real images; the core contracts stay dependency-free.
+# The CNN that classifies stripe-vs-solid is optional on top of this - the
+# detector falls back to its rim measurement when torch is absent.
+perception = ["opencv-contrib-python>=4.7", "numpy>=1.24"]
 
 [project.scripts]
 companion = "companion.app:main"
@@ -21,3 +25,4 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "companion.pool.planning" = ["replay.html"]
+"companion.pool.perception.vision.classify.net" = ["ball_kinds.pt"]

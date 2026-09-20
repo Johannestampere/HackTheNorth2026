@@ -17,7 +17,7 @@ An integration owner is a responsibility one teammate takes on, not a required f
 
 ## Teammate 1: perception
 
-Entry point: `src/companion/pool/perception/service.py`, `PerceptionService.estimate()`.
+Entry point: `src/companion/pool/perception/service.py`, `PerceptionService.estimate()`. Partly implemented for an overhead capture: see [perception guide](perception.md) for what is done and what is not.
 
 Input: one or more RGB captures with calibration/view IDs, plus measured `TableGeometry`. Output: `PerceptionReady(TableState)` or a typed incomplete/unusable outcome.
 
