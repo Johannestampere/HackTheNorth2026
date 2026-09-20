@@ -18,6 +18,13 @@ Unlike `shot_demo.py`, which replays a saved capture, this reads the camera.
 It also expects a *partial* rack - balls leave a table as the game is played -
 and says plainly which readings a short count makes unreliable rather than
 presenting them at the same confidence as a full one.
+
+`--frame` substitutes an image on disk for the camera and changes nothing
+else, so a saved frame reproduces a decision exactly - on a machine with no
+camera, or to re-examine a scan that went wrong. The grid is then locked from
+that single frame rather than from a burst, which is a weaker measurement of
+the table's shape: the burst exists so many views can outvote the badly
+conditioned ones, and one still has nothing to pool.
 """
 
 from __future__ import annotations
@@ -25,6 +32,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from dataclasses import replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -41,11 +49,13 @@ from companion.pool.contracts.serialization import (           # noqa: E402
 from companion.pool.perception.service import PerceptionService  # noqa: E402
 from companion.pool.perception.vision import surface, table_spec  # noqa: E402
 from companion.pool.perception.vision.calibration import (      # noqa: E402
-    CalibrationError, calibrate_from_camera)
+    CalibrationError, calibrate_from_camera, calibrate_from_frames)
 from companion.pool.perception.vision.camera import (           # noqa: E402
     Camera, CameraConfig, CameraError, find_camera_index)
+from companion.pool.perception.vision.ball_scale import (       # noqa: E402
+    measure_ball_scale)
 from companion.pool.perception.vision.detector import (         # noqa: E402
-    describe_inconsistency, detect_balls)
+    BALL_RADIUS_FRAC, describe_inconsistency, detect_balls)
 
 from shot_plot import plot_state, plot_shot                    # noqa: E402
 
@@ -75,6 +85,8 @@ def main() -> int:
                         help="Open windows as well as writing the files")
     parser.add_argument("--save-frame", action="store_true",
                         help="Keep the captured frame, to re-run offline")
+    parser.add_argument("--frame", type=Path, default=None,
+                        help="Read this image instead of opening the camera")
     parser.add_argument("--no-plan", action="store_true",
                         help="Scan and plot the table only; skip the physics")
     args = parser.parse_args()
@@ -114,7 +126,50 @@ def main() -> int:
     print(f"  {len(found)} balls: "
           + ", ".join(f"{n} {k}" for k, n in sorted(kinds.items())))
 
-    warning = describe_inconsistency(found)
+    # ---- 2b. the ball radius, measured rather than assumed --------------
+    # The fixture's radius is equipment calibration for one table, and the
+    # planner's blocking test is where a wrong one becomes a wrong shot: it
+    # compares a measured ball separation against `2 * ball_radius`, so a
+    # radius half the truth reports a blocked lane as clear. Measure it from
+    # this frame and let the fixture be the seed only.
+    #
+    # The measurement goes to the *geometry* and nowhere else. It deliberately
+    # does not re-run detection, even though the detector's kernels are all
+    # multiples of the radius and are therefore the wrong size. On this table
+    # re-detecting at the true 0.0277 kept all 9 balls and their positions but
+    # destroyed the stripe/solid call - 3 stripes became 0, and the network
+    # hallucinated a second 8 ball. Both classifiers were calibrated around
+    # the 0.0150 prior: the rim annulus reaches a real ball's shadowed edge
+    # rather than its bright interior, and the CNN's training crops were cut
+    # from this pipeline at that same prior, so a correctly-sized crop is a
+    # domain it has never seen.
+    #
+    # What makes the split legitimate rather than a fudge is that a ball's
+    # *position* comes out in table units and does not depend on the prior at
+    # all. So detection keeps the scale its classifiers were tuned for, the
+    # planner gets the scale the table actually has, and neither is asked to
+    # use a number that is wrong for it. Retraining the classifier at a
+    # measured radius is the real fix and is not this change.
+    scale = measure_ball_scale(frame, grid.homography,
+                               prior_frac=BALL_RADIUS_FRAC)
+    if scale is None:
+        print(f"  ball radius: not measurable on this frame; keeping the "
+              f"assumed {BALL_RADIUS_FRAC:.4f} of the long side",
+              file=sys.stderr)
+    else:
+        print(f"  {scale.describe()}")
+        if not scale.converged:
+            print("  NOTE: the radius estimate had not settled; treat the "
+                  "blocking calls as provisional", file=sys.stderr)
+        if scale.spread > 0.20:
+            print(f"  NOTE: balls disagree about their own size by "
+                  f"{scale.spread:.0%}; check the lock and the lighting",
+                  file=sys.stderr)
+        geometry = replace(geometry, ball_radius=scale.radius_frac)
+
+    # The count check belongs to the detector's own prior, which is what
+    # found these balls; the measured radius did not.
+    warning = describe_inconsistency(found, BALL_RADIUS_FRAC)
     if warning:
         print(f"\n  NOTE: {warning}\n", file=sys.stderr)
     elif len(found) < SET_SIZE:
@@ -166,6 +221,15 @@ def main() -> int:
     if not isinstance(result, PlanningReady):
         print(f"  {type(result).__name__}: "
               f"{getattr(result, 'reason', '')}", file=sys.stderr)
+        # An earlier run's decision plot must not survive a run that reached
+        # no decision. The two figures are meant to be read side by side, so
+        # a stale one next to a fresh scan reads as this scan's answer - and
+        # "no legal pot" is exactly when someone goes looking at the picture.
+        stale = args.outdir / "2-shot-decision.png"
+        if stale.exists():
+            stale.unlink()
+            print(f"  removed {stale}, which was from an earlier scan",
+                  file=sys.stderr)
         return 1
     plan = result.plan
     print(f"  pot {plan.target_ball_id} into {plan.target_pocket_id} "
@@ -182,7 +246,33 @@ def main() -> int:
 
 
 def _scan(args) -> tuple[np.ndarray | None, object]:
-    """Open the camera, settle it, pool frames and lock the grid."""
+    """Open the camera, settle it, pool frames and lock the grid.
+
+    With `--frame` the image is read from disk instead. The grid is locked
+    from that one frame, which is the whole difference: the burst exists to
+    pool the perspective across many views, and a single still cannot do
+    that, so the shape it recovers is weaker than a live lock's. Everything
+    downstream is identical, which is the point - it lets a saved frame
+    reproduce a decision exactly, on hardware with no camera attached.
+    """
+    if args.frame is not None:
+        frame = cv2.imread(str(args.frame))
+        if frame is None or not frame.size:
+            print(f"frame: {args.frame} is not a readable image",
+                  file=sys.stderr)
+            return None, None
+        print(f"frame: {args.frame} ({frame.shape[1]}x{frame.shape[0]})")
+        try:
+            grid, last = calibrate_from_frames([frame])
+        except CalibrationError as error:
+            print(f"grid: {error}", file=sys.stderr)
+            return None, None
+        print(f"grid: locked from 1 frame, fit error "
+              f"{grid.homography.reprojection_error_mm:.4f} u")
+        for note in grid.notes:
+            print(f"  note: {note}")
+        return last.image, grid
+
     try:
         index = args.camera
         if index is None:
@@ -226,7 +316,13 @@ def _scan(args) -> tuple[np.ndarray | None, object]:
 
 
 def _as_table_state(frame: np.ndarray, geometry, outdir: Path):
-    """The frame through PerceptionService, so one conversion serves both."""
+    """The frame through PerceptionService, so one conversion serves both.
+
+    The service detects at its own tuned prior, not at `geometry.ball_radius`.
+    Those are two different jobs for one number - finding and classifying a
+    ball, versus knowing how much room it takes up - and only the second is
+    measured here. See the note at the call site.
+    """
     import json
     path = outdir / "_scan_capture.json"
     image_path = outdir / "_scan_frame.png"
