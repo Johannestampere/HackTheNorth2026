@@ -7,10 +7,11 @@ is no fixed number of sections. Text wraps and scales to fit, with a minimum
 readable font size. Excessively long output fails rather than clipping or
 shrinking into unreadable text.
 
-The model should explain something useful, answer the spoken question, or ask
-for missing context. Seeing a pool table alone does not establish which game or
-rules apply, and this mode does not calculate shots. Use the pool planner for
-shot recommendations.
+The model proactively supplies useful general information about the visible
+subject, even without speech: pool rules or aiming fundamentals for a pool table,
+or an explanation of a visible textbook topic. It answers spoken questions when
+present. It does not display a help menu or ask what the user wants. Game-specific
+rules are labeled by variant; this mode does not calculate shots.
 
 Use `--web-images` to explicitly choose the previous image-search experience:
 OpenAI chooses a query, searches Wikimedia Commons, selects from result metadata,
