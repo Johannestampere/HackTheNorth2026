@@ -41,6 +41,17 @@ class WebImages:
     def search(self,query):
         if not isinstance(query,str) or not 1<=len(query.strip())<=150:
             raise ValueError('Image query must contain 1–150 characters')
+        original=query.strip()
+        words=original.split()
+        queries=list(dict.fromkeys([original,' '.join(words[:4]),' '.join(words[:2])]))
+        for simplified in queries:
+            candidates=self._search_once(simplified)
+            if candidates:
+                for candidate in candidates: candidate['requested_query']=original
+                return candidates
+        raise RuntimeError('No usable image found after broader searches')
+
+    def _search_once(self,query):
         params=dict(action='query',format='json',generator='search',gsrsearch=query,
                     gsrnamespace=6,gsrlimit=8,prop='imageinfo',
                     iiprop='url|mime|size|extmetadata',iiurlwidth=1600)
@@ -61,7 +72,6 @@ class WebImages:
                 width=width,height=height,description=field('ImageDescription')[:700],
                 author=field('Artist'),credit=field('Credit'),license=field('LicenseShortName'),
                 license_url=field('LicenseUrl'),attribution=field('Attribution'),query=query))
-        if not candidates: raise RuntimeError('No usable image found; try a broader query')
         return candidates
 
     def download(self,candidate):

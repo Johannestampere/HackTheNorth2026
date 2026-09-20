@@ -13,6 +13,14 @@ from ambient_projector.web_images import WebImages, fullscreen, check_url
 
 
 class WebImageTests(unittest.TestCase):
+    def test_empty_specific_query_broadens_before_giving_up(self):
+        search=WebImages()
+        with patch.object(search,'_search_once',side_effect=[[],[],[{'title':'Pool'}]]) as call:
+            result=search.search('pool table billiard balls arrangement diagram')
+        self.assertEqual([c.args[0] for c in call.call_args_list],
+                         ['pool table billiard balls arrangement diagram','pool table billiard balls','pool table'])
+        self.assertEqual(result[0]['requested_query'],'pool table billiard balls arrangement diagram')
+
     def test_fit_does_not_crop_and_flattens_to_rgb(self):
         frame=fullscreen(Image.new('RGB',(100,200),'red'),640,480)
         self.assertEqual(frame.size,(640,480))
