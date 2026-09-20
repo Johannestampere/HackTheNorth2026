@@ -178,6 +178,8 @@ def main(argv=None):
     parser.add_argument('--max-shots', type=int, default=32)
     parser.add_argument('--table-length-m', type=float, default=2.0)
     parser.add_argument('--output', type=Path, default=Path('artifacts/pool-game.html'))
+    parser.add_argument('--search-depth', type=int, choices=range(1,5), default=4)
+    parser.add_argument('--simulation-budget', type=int, default=4000)
     args = parser.parse_args(argv)
     if args.compare_angles and args.execution_seed is not None:
         parser.error('--compare-angles uses nominal attempts; omit --execution-seed')
@@ -187,7 +189,8 @@ def main(argv=None):
     state = load_table_state(args.state or fixture)
     if args.state is None and not args.compare_angles:
         state = spread_rack(state, args.seed)
-    config = PlannerConfig(table_length_m=args.table_length_m)
+    config = PlannerConfig(table_length_m=args.table_length_m, search_depth=args.search_depth,
+                           simulation_budget=args.simulation_budget)
     data = (compare_angles(state, config) if args.compare_angles else
             run(state, config, args.max_shots, args.execution_seed))
     template = Path(__file__).with_name('replay.html').read_text()

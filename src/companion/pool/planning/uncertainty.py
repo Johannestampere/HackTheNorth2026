@@ -59,7 +59,7 @@ class TrialStats:
 
     Utility: win +3, legal called pot +1, legal miss 0, foul -2, rack loss -5.
     Loss takes precedence over foul; win over pot, avoiding double counting.
-    This immediate utility feeds the discounted second-shot lookahead score.
+    This immediate utility feeds the discounted multi-shot lookahead score.
     """
 
     trials: int

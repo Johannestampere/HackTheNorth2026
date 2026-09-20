@@ -6,7 +6,7 @@ The first tool is **pool**. The robot sits beside the table, some distance away 
 
 ## Current status
 
-The **pool planner now runs Pooltool simulations** to choose direct center-ball pots, evaluate basic shot legality, rank successes using sampled execution/position errors and bounded two-shot lookahead, and output cue aim, speed, and predicted paths. A standalone 2D replay shows synthetic game runs. Calibrated perspective rendering, PNG previews, and an explicit Pi HTTP sender are implemented on this branch; see [projection integration](docs/projection.md). Perception, LLM routing, and rotation control remain stubs. The merged [Raspberry Pi display](raspi/README.md) accepts RGB frames or screen-space vectors over HTTP and drives HDMI. See the [planning guide](docs/planning.md) for setup, scoring, and limitations.
+The **pool planner now runs Pooltool simulations** to choose direct center-ball pots, evaluate basic shot legality, rank successes using sampled execution/position errors and bounded four-shot lookahead, and output cue aim, speed, and predicted paths. A standalone 2D replay shows synthetic game runs. Calibrated perspective rendering, PNG previews, and an explicit Pi HTTP sender are implemented on this branch; see [projection integration](docs/projection.md). Perception, LLM routing, and rotation control remain stubs. The merged [Raspberry Pi display](raspi/README.md) accepts RGB frames or screen-space vectors over HTTP and drives HDMI. See the [planning guide](docs/planning.md) for setup, scoring, and limitations.
 
 The fixtures are synthetic examples, not camera measurements or a validated shot recommendation. No model weights, camera SDK, LLM credentials, or hardware are required to start.
 

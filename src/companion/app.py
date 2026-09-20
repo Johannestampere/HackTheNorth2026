@@ -59,6 +59,10 @@ def main(argv: list[str] | None = None) -> int:
     calibrate.add_argument('--calibration-id', required=True)
     calibrate.add_argument('--pose-id', required=True)
     calibrate.add_argument('--output', type=Path, required=True)
+    for command in (plan, project):
+        command.add_argument('--search-depth', type=int, choices=range(1,5), default=4,
+                             help='Own-turn search horizon including the current shot')
+        command.add_argument('--simulation-budget', type=int, default=4000)
     args = parser.parse_args(argv)
     try:
         if args.command == "check-fixtures":
@@ -94,7 +98,8 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "plan":
             game = load_game_context(args.game)
             state = load_table_state(args.state)
-            result = PooltoolPlanner(PlannerConfig(table_length_m=args.table_length_m)).plan(state, game)
+            result = PooltoolPlanner(PlannerConfig(table_length_m=args.table_length_m,
+                    search_depth=args.search_depth, simulation_budget=args.simulation_budget)).plan(state, game)
             if not isinstance(result, PlanningReady):
                 print(f"{type(result).__name__}: {result.reason}")
                 return 1
@@ -114,7 +119,8 @@ def main(argv: list[str] | None = None) -> int:
                 target = load_projection_target(args.target)
                 if target.geometry != state.geometry:
                     raise ValueError('Calibration geometry does not match observed table')
-                result = PooltoolPlanner(PlannerConfig(table_length_m=args.table_length_m)).plan(state, game)
+                result = PooltoolPlanner(PlannerConfig(table_length_m=args.table_length_m,
+                    search_depth=args.search_depth, simulation_budget=args.simulation_budget)).plan(state, game)
                 if not isinstance(result, PlanningReady):
                     print(f'{type(result).__name__}: {result.reason}')
                     return 1
