@@ -16,6 +16,11 @@ planning = ["pooltool-billiards==0.6.0"]
 # The CNN that classifies stripe-vs-solid is optional on top of this - the
 # detector falls back to its rim measurement when torch is absent.
 perception = ["opencv-contrib-python>=4.7", "numpy>=1.24"]
+# The local stripe/solid CNN. Optional on top of perception: without it the
+# detector falls back to its rim measurement.
+perception-cnn = ["torch>=2.0"]
+# tools/shot_demo.py only - plotting is not needed by any stage.
+demo = ["matplotlib>=3.7"]
 
 [project.scripts]
 companion = "companion.app:main"

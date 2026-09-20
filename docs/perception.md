@@ -133,6 +133,78 @@ PYTHONPATH=src python3.11 tools/htn26_cli.py   --image data/local/fixtures/real_
 The drawing they rely on lives in `vision/overlay.py`, beside the detector
 whose output it renders.
 
+## Scanning the real table
+
+`tools/live_scan.py` runs the whole workflow against the camera:
+
+```sh
+PYTHONPATH=src python3.11 tools/live_scan.py
+PYTHONPATH=src python3.11 tools/live_scan.py --show        # also open windows
+PYTHONPATH=src python3.11 tools/live_scan.py --no-plan     # scan and plot only
+PYTHONPATH=src python3.11 tools/live_scan.py --save-frame  # keep the frame
+```
+
+It opens a webcam, pools frames into a locked grid, detects and classifies
+the balls, and writes two figures to `artifacts/live/`:
+
+| File | What it answers |
+| --- | --- |
+| `1-table-scan.png` | Did the camera read the table correctly? The measured x/y grid with each ball drawn where it was found and labelled with its ID. |
+| `2-shot-decision.png` | What should I do about it? The simulated paths, the ghost ball and the aim vector. |
+
+Two figures rather than one because they fail differently. When a suggested
+shot looks wrong, the first says whether perception or planning was at fault.
+
+`--camera N` picks a device (default prefers an external one), `--frames N`
+sets how many frames are pooled for the grid, and `--settle` gives the
+exposure time to settle before capture - calibrating on a camera's first
+frames costs accuracy.
+
+### A partial rack
+
+Balls leave a table as the game is played, and this expects that. Two things
+behave differently from a full rack, and neither is silent:
+
+- **The cue and the eight are chosen by comparison** against the balls that
+  were found, and the stripe/solid pairing needs all fourteen object balls.
+  Below twelve balls the detector says so itself; below sixteen the scan
+  prints a one-line reminder to confirm both in the grid plot.
+- **The planner needs a cue ball and an eight ball on the cloth**, and
+  refuses any state with an unclassified ball, since it cannot judge whether
+  potting an unknown ball is legal. `live_scan.py` checks these before
+  loading the simulator, so a missing ball is named immediately rather than
+  after a search.
+
+## End to end: photo in, shot vector out
+
+`tools/shot_demo.py` runs both stages on one capture and plots the result -
+the table, the balls as perception classified them, the simulated paths, and
+the aim vector anchored on the cue ball:
+
+```sh
+PYTHONPATH=src python3.11 tools/shot_demo.py
+PYTHONPATH=src python3.11 tools/shot_demo.py --show        # also open a window
+```
+
+It writes `artifacts/shot.png`. It is a check, not a stage: it calls the same
+`PerceptionService` and `PooltoolPlanner` the pipeline does, so a disagreement
+between them shows up as a wrong-looking picture rather than as numbers to
+verify by hand. The plot is drawn from the returned `ShotPlan` alone - if the
+arrow does not start on the cue ball and run through the ghost ball, the
+contract is being filled in wrong.
+
+### Installing pooltool
+
+`pip install -e ".[planning]"` fails on its own: pooltool 0.6.0 pins a
+panda3d development build that is not on PyPI. Add panda3d's own index:
+
+```sh
+pip install -e ".[planning]" --extra-index-url https://archive.panda3d.org/simple
+```
+
+Note that this resolves numpy down (2.4 to 2.3 here); the vision pipeline is
+unaffected, but it is why the planning extra is not installed by default.
+
 ## Tests
 
 `tests/perception/` holds 99 tests: the 90 ported with the pipeline plus 9
